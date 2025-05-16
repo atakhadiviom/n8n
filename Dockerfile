@@ -1,11 +1,15 @@
 FROM n8nio/n8n
 
+# Optional: set env variables here or in Render dashboard
 ENV N8N_BASIC_AUTH_ACTIVE=true
-ENV N8N_BASIC_AUTH_USER=yourusername
-ENV N8N_BASIC_AUTH_PASSWORD=yourpassword
+ENV N8N_BASIC_AUTH_USER=atakhadivi
+ENV N8N_BASIC_AUTH_PASSWORD=Imata+989374302264
 ENV N8N_HOST=0.0.0.0
 ENV N8N_PORT=5678
-ENV WEBHOOK_URL=https://your-render-app.onrender.com/
+ENV WEBHOOK_URL=https://n8n-6d36.onrender.com
+ENV N8N_ENCRYPTION_KEY=Qsq+jYd7uuzSE9P1NWMWTXWJHbLU8YvL3UJ8NuoUBIE=
+ENV N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
 
 EXPOSE 5678
+
 CMD ["n8n"]
