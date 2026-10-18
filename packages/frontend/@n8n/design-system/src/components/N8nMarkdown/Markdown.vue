@@ -1,35 +1,45 @@
 <script lang="ts" setup>
-import type { Options as MarkdownOptions } from 'markdown-it';
+import type { Options as MarkdownOptions, PluginSimple } from 'markdown-it';
 import Markdown from 'markdown-it';
 import markdownEmoji from 'markdown-it-emoji';
 import markdownLink from 'markdown-it-link-attributes';
 import markdownTaskLists from 'markdown-it-task-lists';
 import { computed, ref } from 'vue';
-import xss, { friendlyAttrValue, whiteList } from 'xss';
+import type { IWhiteList } from 'xss';
+import xss from 'xss';
 
-import { escapeMarkdown, toggleCheckbox } from '../../utils/markdown';
+import { markdownYoutubeEmbed, YOUTUBE_EMBED_SRC_REGEX, type YoutubeEmbedConfig } from './youtube';
+import { toggleCheckbox, serializeAttr } from '../../utils/markdown';
 import N8nLoading from '../N8nLoading';
 
 interface IImage {
-	id: string;
+	id: string | number;
 	url: string;
 }
 
-interface Options {
-	markdown: MarkdownOptions;
-	linkAttributes: markdownLink.Config;
-	tasklists: markdownTaskLists.Config;
+interface Options extends MarkdownOptions {
+	/** Parser options for consumers that use the nested format. */
+	markdown?: MarkdownOptions;
+	/** Attributes to add to rendered links. */
+	linkAttributes?: markdownLink.Config;
+	/** Settings for task list checkboxes. */
+	tasklists?: markdownTaskLists.Config;
+	/** Settings for YouTube embeds. */
+	youtube?: YoutubeEmbedConfig;
 }
 
 interface MarkdownProps {
-	content?: string;
+	content?: string | null;
 	withMultiBreaks?: boolean;
 	images?: IImage[];
 	loading?: boolean;
 	loadingBlocks?: number;
 	loadingRows?: number;
 	theme?: string;
+	/** Parser options and optional settings for built-in plugins. */
 	options?: Options;
+	/** Additional plugins, applied after the built-in plugins. */
+	plugins?: PluginSimple[];
 }
 
 const props = withDefaults(defineProps<MarkdownProps>(), {
@@ -40,9 +50,10 @@ const props = withDefaults(defineProps<MarkdownProps>(), {
 	loadingBlocks: 2,
 	loadingRows: 3,
 	theme: 'markdown',
+	plugins: () => [],
 	options: () => ({
 		markdown: {
-			html: true,
+			html: false,
 			linkify: true,
 			typographer: true,
 			breaks: true,
@@ -56,22 +67,54 @@ const props = withDefaults(defineProps<MarkdownProps>(), {
 		tasklists: {
 			enabled: true,
 			label: true,
-			labelAfter: true,
+			labelAfter: false,
 		},
+		youtube: {},
 	}),
 });
 
 const editor = ref<HTMLDivElement | undefined>(undefined);
 
-const { options } = props;
-const md = new Markdown(options.markdown)
-	.use(markdownLink, options.linkAttributes)
-	.use(markdownEmoji)
-	.use(markdownTaskLists, options.tasklists);
+// The shared `.n8n-markdown` styles (css/markdown.scss) change markdown's
+// vertical rhythm. Stickies opt out to keep their legacy layout, so hand-sized
+// notes in saved workflows don't clip or overlap nodes (ADO-5800).
+const applyGlobalMarkdownStyles = computed(() => props.theme !== 'sticky');
+
+const md = computed(() => {
+	const { options } = props;
+	const parser = new Markdown({
+		html: false,
+		linkify: true,
+		typographer: true,
+		breaks: true,
+		...options,
+		...options.markdown,
+	})
+		.use(markdownLink, options.linkAttributes ?? { attrs: { target: '_blank', rel: 'noopener' } })
+		.use(markdownEmoji)
+		.use(markdownTaskLists, options.tasklists ?? { enabled: true, label: true, labelAfter: false })
+		.use(markdownYoutubeEmbed, options.youtube ?? {});
+
+	for (const plugin of props.plugins) {
+		parser.use(plugin);
+	}
+
+	return parser;
+});
+
+// `xss` is CJS with no `exports` map. Node's lexer cannot see `whiteList` as a
+// named export, so `import { whiteList }` throws at link time under native ESM
+// once a consumer loads our `dist`. At runtime `module.exports` is the filter
+// function with the helpers hung off it, which the shipped typings don't model.
+const { whiteList } = xss as unknown as { whiteList: IWhiteList };
 
 const xssWhiteList = {
 	...whiteList,
 	label: ['class', 'for'],
+	/** Keep plugin markers for code actions, table containers, and footnotes. */
+	div: [...(whiteList.div ?? []), 'class', 'data-markdown-token-idx'],
+	span: [...(whiteList.span ?? []), 'class', 'title'],
+	iframe: ['width', 'height', 'src', 'title', 'frameborder', 'allow', 'referrerpolicy'],
 };
 
 const htmlContent = computed(() => {
@@ -94,16 +137,68 @@ const htmlContent = computed(() => {
 	const fileIdRegex = new RegExp('fileId:([0-9]+)');
 	let contentToRender = props.content;
 	if (props.withMultiBreaks) {
-		contentToRender = contentToRender.replaceAll('\n\n', '\n&nbsp;\n');
+		// Stickies in saved workflows were laid out against the legacy spacing
+		// semantics: a single blank line is a real paragraph break, and each extra
+		// blank line in a run renders as an &nbsp; line (ADO-5800). Fenced code
+		// blocks are excluded so &nbsp; never leaks into rendered code.
+		// Parse a code-fence line into its fence char and run length (>= 3). A fence
+		// can be made of 3+ backticks or tildes; the closing fence must use the same
+		// char and be at least as long, and carry no info string after it.
+		const parseFence = (line: string) => {
+			const match = /^\s*(`{3,}|~{3,})(.*)$/.exec(line);
+			return match ? { char: match[1][0], length: match[1].length, rest: match[2] } : null;
+		};
+		const renderExtraBlankLines = (text: string) =>
+			text.replace(/\n{3,}/g, (match) => {
+				// Keep \n\n for the paragraph break, add &nbsp;\n for each extra blank line
+				return '\n\n' + '&nbsp;\n'.repeat(match.length - 2);
+			});
+		const segments: Array<{ isCode: boolean; lines: string[] }> = [];
+		let openFence: { char: string; length: number } | null = null;
+		for (const line of contentToRender.split('\n')) {
+			const fence = parseFence(line);
+			let isCode = false;
+			if (openFence) {
+				isCode = true;
+				// A closing fence matches the opening char, is at least as long, and
+				// has no trailing content; shorter/different fences stay code content.
+				if (
+					fence &&
+					fence.char === openFence.char &&
+					fence.length >= openFence.length &&
+					fence.rest.trim() === ''
+				) {
+					openFence = null;
+				}
+			} else if (fence) {
+				openFence = { char: fence.char, length: fence.length };
+				isCode = true;
+			}
+			const previous = segments[segments.length - 1];
+			if (previous && previous.isCode === isCode) {
+				previous.lines.push(line);
+			} else {
+				segments.push({ isCode, lines: [line] });
+			}
+		}
+		contentToRender = segments
+			.map(({ isCode, lines }) =>
+				isCode ? lines.join('\n') : renderExtraBlankLines(lines.join('\n')),
+			)
+			.join('\n');
 	}
-	const html = md.render(escapeMarkdown(contentToRender));
+	const html = md.value.render(contentToRender);
+
 	const safeHtml = xss(html, {
 		onTagAttr(tag, name, value) {
 			if (tag === 'img' && name === 'src') {
 				if (value.match(fileIdRegex)) {
 					const id = value.split('fileId:')[1];
-					const attributeValue = friendlyAttrValue(imageUrls[id]);
-					return attributeValue ? `src=${attributeValue}` : '';
+					const imageUrl = imageUrls[id];
+					if (!imageUrl) {
+						return '';
+					}
+					return serializeAttr(tag, name, imageUrl);
 				}
 				// Only allow http requests to supported image files from the `static` directory
 				const isImageFile = value.split('#')[0].match(/\.(jpeg|jpg|gif|png|webp)$/) !== null;
@@ -112,6 +207,19 @@ const htmlContent = computed(() => {
 					return '';
 				}
 			}
+
+			if (tag === 'iframe') {
+				if (name === 'src') {
+					// Only allow YouTube as src for iframes embeds
+					if (YOUTUBE_EMBED_SRC_REGEX.test(value)) {
+						return serializeAttr(tag, name, value);
+					} else {
+						return '';
+					}
+				}
+				return;
+			}
+
 			// Return nothing, means keep the default handling measure
 			return;
 		},
@@ -194,16 +302,19 @@ const onCheckboxChange = (index: number) => {
 </script>
 
 <template>
-	<div class="n8n-markdown">
+	<div :class="{ 'n8n-markdown': applyGlobalMarkdownStyles }">
+		<!-- Needed to support YouTube player embeds. HTML rendered here is sanitized. -->
+		<!-- eslint-disable vue/no-v-html -->
 		<div
 			v-if="!loading"
 			ref="editor"
-			v-n8n-html="htmlContent"
 			:class="$style[theme]"
 			@click="onClick"
 			@mousedown="onMouseDown"
 			@change="onChange"
+			v-html="htmlContent"
 		/>
+		<!-- eslint-enable vue/no-v-html -->
 		<div v-else :class="$style.markdown">
 			<div v-for="(_, index) in loadingBlocks" :key="index">
 				<N8nLoading :loading="loading" :rows="loadingRows" animated variant="p" />
@@ -215,72 +326,69 @@ const onCheckboxChange = (index: number) => {
 
 <style lang="scss" module>
 .markdown {
-	color: var(--color-text-base);
+	color: color-mix(in oklch, var(--color--text), transparent 8%);
 
 	* {
-		font-size: var(--font-size-m);
-		line-height: var(--font-line-height-xloose);
+		font-size: var(--n8n-markdown--base-font-size, var(--font-size--md));
+		line-height: var(--line-height--xl);
 	}
 
 	h1,
 	h2,
 	h3,
 	h4 {
-		margin-bottom: var(--spacing-s);
-		font-size: var(--font-size-m);
-		font-weight: var(--font-weight-bold);
-	}
-
-	h3,
-	h4 {
-		font-weight: var(--font-weight-bold);
+		margin-bottom: var(--spacing--sm);
+		font-size: var(--font-size--md);
+		font-weight: var(--font-weight--medium);
 	}
 
 	p,
 	span {
-		margin-bottom: var(--spacing-s);
+		margin-bottom: var(--spacing--sm);
 	}
 
 	ul,
 	ol {
-		margin-bottom: var(--spacing-s);
-		padding-left: var(--spacing-m);
+		margin-bottom: var(--spacing--sm);
+		padding-left: var(--spacing--md);
 
 		li {
 			margin-top: 0.25em;
 		}
 	}
 
+	// The pre box (background + padding) comes from the global .n8n-markdown
+	// styles in css/markdown.scss; a second box on code doubles it up.
 	pre > code {
-		background-color: var(--color-background-base);
-		color: var(--color-text-dark);
+		background-color: transparent;
+		color: var(--color--text--shade-1);
 	}
 
 	li > code,
 	p > code {
-		padding: 0 var(--spacing-4xs);
-		color: var(--color-text-dark);
-		background-color: var(--color-background-base);
+		padding: 0 var(--spacing--4xs);
+		color: var(--color--text--shade-1);
+		background-color: var(--color--background);
 	}
 
 	.label {
-		color: var(--color-text-base);
+		color: var(--color--text);
 	}
 
 	img {
 		max-width: 100%;
-		border-radius: var(--border-radius-large);
+		border-radius: var(--radius--lg);
 	}
 
 	blockquote {
 		padding-left: 10px;
 		font-style: italic;
-		border-left: var(--border-color-base) 2px solid;
+		border-left: var(--border-color) 2px solid;
 	}
 }
 
 input[type='checkbox'] {
-	accent-color: var(--color-primary);
+	accent-color: var(--color--primary);
 }
 
 input[type='checkbox'] + label {
@@ -288,7 +396,7 @@ input[type='checkbox'] + label {
 }
 
 .sticky {
-	color: var(--color-sticky-font);
+	color: var(--sticky--color--text);
 	overflow-wrap: break-word;
 
 	h1,
@@ -297,16 +405,16 @@ input[type='checkbox'] + label {
 	h4,
 	h5,
 	h6 {
-		color: var(--color-sticky-font);
+		color: var(--sticky--color--text);
 	}
 
 	h1,
 	h2,
 	h3,
 	h4 {
-		margin-bottom: var(--spacing-2xs);
-		font-weight: var(--font-weight-bold);
-		line-height: var(--font-line-height-loose);
+		margin-bottom: var(--spacing--2xs);
+		font-weight: var(--font-weight--medium);
+		line-height: var(--line-height--lg);
 	}
 
 	h1 {
@@ -321,55 +429,133 @@ input[type='checkbox'] + label {
 	h4,
 	h5,
 	h6 {
-		font-size: var(--font-size-m);
+		font-size: var(--font-size--md);
 	}
 
 	p {
-		margin-bottom: var(--spacing-2xs);
-		font-size: var(--font-size-s);
-		font-weight: var(--font-weight-regular);
-		line-height: var(--font-line-height-loose);
+		margin-bottom: var(--spacing--2xs);
+		font-size: var(--font-size--sm);
+		font-weight: var(--font-weight--regular);
+		line-height: var(--line-height--lg);
 	}
 
 	ul,
 	ol {
-		margin-bottom: var(--spacing-2xs);
-		padding-left: var(--spacing-m);
+		margin-bottom: var(--spacing--2xs);
+		padding-left: var(--spacing--md);
 
 		li {
 			margin-top: 0.25em;
-			font-size: var(--font-size-s);
-			font-weight: var(--font-weight-regular);
-			line-height: var(--font-line-height-regular);
+			font-size: var(--font-size--sm);
+			font-weight: var(--font-weight--regular);
+			line-height: var(--line-height--md);
 		}
 
 		&:has(input[type='checkbox']) {
 			list-style-type: none;
-			padding-left: var(--spacing-5xs);
+			padding-left: var(--spacing--5xs);
 		}
 	}
 
 	pre > code {
-		background-color: var(--color-sticky-code-background);
-		color: var(--color-sticky-code-font);
+		padding: var(--spacing--sm);
+		background-color: var(--sticky--code--color--background);
+		color: var(--sticky--code--color--text);
 	}
 
 	pre > code,
 	li > code,
-	p > code {
-		color: var(--color-sticky-code-font);
+	p > code,
+	td > code {
+		color: var(--sticky--code--color--text);
 	}
 
-	a {
+	// Shared markdown link look, minus `font-weight: medium`: a weight change
+	// shifts wrap points and note heights must stay stable (ADO-5800).
+	// Links inside headings keep the heading style, like the shared skin.
+	a:not(:where(h1, h2, h3, h4, h5, h6) *) {
+		color: var(--color--text--shade-1);
+		text-decoration: underline;
+		text-underline-offset: 3px;
+		text-decoration-thickness: 1px;
+		transition: color 0.15s ease;
+
 		&:hover {
-			text-decoration: underline;
+			color: var(--color--primary);
 		}
+	}
+
+	// Shared markdown blockquote look with the sticky's compact vertical
+	// rhythm, and sticky-aware colors so it stays visible on all note colors.
+	blockquote {
+		margin-bottom: var(--spacing--2xs);
+		padding-left: var(--spacing--sm);
+		border-left: var(--spacing--4xs) solid var(--sticky--border-color, currentColor);
+		font-style: italic;
+
+		// The blockquote carries the bottom spacing; don't stack the paragraph's.
+		// No open-quote/close-quote pseudos here: the app reset sets
+		// `blockquote { quotes: none }`, so they never render inside n8n.
+		p:last-of-type {
+			margin-bottom: 0;
+		}
+	}
+
+	// Shared markdown table look with the sticky's compact vertical rhythm,
+	// and sticky-aware colors so borders stay visible on all note colors.
+	table {
+		width: 100%;
+		table-layout: auto;
+		margin-bottom: var(--spacing--2xs);
+		font-size: var(--font-size--sm);
+		line-height: var(--line-height--lg);
+	}
+
+	thead {
+		border-bottom: 1px solid var(--sticky--border-color, currentColor);
+	}
+
+	thead th {
+		color: var(--sticky--color--text);
+		font-weight: var(--font-weight--bold);
+		vertical-align: bottom;
+		padding: 0 0.6em 0.8em;
+	}
+
+	tbody tr {
+		border-bottom: 1px solid var(--sticky--border-color, currentColor);
+
+		&:last-child {
+			border-bottom-width: 0;
+		}
+	}
+
+	tbody td {
+		vertical-align: baseline;
+		padding: 0.8em 0.6em;
+	}
+
+	thead th,
+	tbody td {
+		text-align: start;
+
+		&:first-child {
+			padding-inline-start: 0;
+		}
+
+		&:last-child {
+			padding-inline-end: 0;
+		}
+	}
+
+	td code {
+		font-size: var(--font-size--xs);
 	}
 
 	img {
 		object-fit: contain;
-		margin-top: var(--spacing-xs);
-		margin-bottom: var(--spacing-2xs);
+		margin-top: var(--spacing--xs);
+		margin-bottom: var(--spacing--2xs);
 
 		&[src*='#full-width'] {
 			width: 100%;
@@ -380,18 +566,25 @@ input[type='checkbox'] + label {
 .sticky,
 .markdown {
 	pre {
-		margin-bottom: var(--spacing-s);
+		margin-bottom: var(--spacing--sm);
 		display: grid;
 	}
 
 	pre > code {
 		display: block;
-		padding: var(--spacing-s);
 		overflow-x: auto;
+	}
+
+	iframe {
+		aspect-ratio: 16/9 auto;
+	}
+
+	summary {
+		cursor: pointer;
 	}
 }
 
 .spacer {
-	margin: var(--spacing-2xl);
+	margin: var(--spacing--2xl);
 }
 </style>

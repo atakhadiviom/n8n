@@ -45,6 +45,9 @@
         "$layout_id": {
             "type": "object",
             "properties": {
+                "display_label": {
+                    "type": "string"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -78,6 +81,17 @@
         },
         "$state": {
             "type": "string"
+        },
+        "Account_Name": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
         },
         "Created_By": {
             "type": "object",
@@ -156,9 +170,12 @@
                 }
             }
         },
-        "Vendor_Name": {
+        "Unsubscribed_Mode": {
+            "type": "null"
+        },
+        "Unsubscribed_Time": {
             "type": "null"
         }
     },
-    "version": 3
+    "version": 9
 }

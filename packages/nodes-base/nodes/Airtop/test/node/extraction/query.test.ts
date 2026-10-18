@@ -25,11 +25,11 @@ const mockResponse = {
 const mockJsonSchema =
 	'{"type":"object","properties":{"productCount":{"type":"number"},"priceRange":{"type":"object"}}}';
 
-jest.mock('../../../transport', () => {
-	const originalModule = jest.requireActual<typeof transport>('../../../transport');
+vi.mock('../../../transport', async () => {
+	const originalModule = await vi.importActual<typeof transport>('../../../transport');
 	return {
 		...originalModule,
-		apiRequest: jest.fn(async function (method: string, endpoint: string) {
+		apiRequest: vi.fn(async function (method: string, endpoint: string) {
 			if (method === 'DELETE' && endpoint.includes('/sessions/')) {
 				return { status: 'success' };
 			}
@@ -38,17 +38,19 @@ jest.mock('../../../transport', () => {
 	};
 });
 
-jest.mock('../../../GenericFunctions', () => {
-	const originalModule = jest.requireActual<typeof GenericFunctions>('../../../GenericFunctions');
+vi.mock('../../../GenericFunctions', async () => {
+	const originalModule = await vi.importActual<typeof GenericFunctions>(
+		'../../../GenericFunctions',
+	);
 	return {
 		...originalModule,
-		createSessionAndWindow: jest.fn().mockImplementation(async () => {
+		createSessionAndWindow: vi.fn().mockImplementation(async () => {
 			return {
 				sessionId: 'new-session-456',
 				windowId: 'new-win-456',
 			};
 		}),
-		shouldCreateNewSession: jest.fn().mockImplementation(function (this: any) {
+		shouldCreateNewSession: vi.fn().mockImplementation(function (this: any) {
 			const sessionMode = this.getNodeParameter('sessionMode', 0);
 			return sessionMode === 'new';
 		}),
@@ -62,12 +64,10 @@ describe('Test Airtop, query page operation', () => {
 
 	afterAll(() => {
 		nock.restore();
-		jest.unmock('../../../transport');
-		jest.unmock('../../../GenericFunctions');
 	});
 
 	afterEach(() => {
-		jest.clearAllMocks();
+		vi.clearAllMocks();
 	});
 
 	it('should query the page with minimal parameters using existing session', async () => {
@@ -86,7 +86,11 @@ describe('Test Airtop, query page operation', () => {
 			'/sessions/test-session-123/windows/win-123/page-query',
 			{
 				prompt: 'How many products are on the page and what is their price range?',
-				configuration: {},
+				configuration: {
+					experimental: {
+						includeVisualAnalysis: 'disabled',
+					},
+				},
 			},
 		);
 
@@ -122,6 +126,9 @@ describe('Test Airtop, query page operation', () => {
 				prompt: 'How many products are on the page and what is their price range?',
 				configuration: {
 					outputSchema: mockJsonSchema,
+					experimental: {
+						includeVisualAnalysis: 'disabled',
+					},
 				},
 			},
 		);
@@ -157,7 +164,11 @@ describe('Test Airtop, query page operation', () => {
 			'/sessions/new-session-456/windows/new-win-456/page-query',
 			{
 				prompt: 'How many products are on the page and what is their price range?',
-				configuration: {},
+				configuration: {
+					experimental: {
+						includeVisualAnalysis: 'disabled',
+					},
+				},
 			},
 		);
 
@@ -192,5 +203,81 @@ describe('Test Airtop, query page operation', () => {
 		await expect(query.execute.call(createMockExecuteFunction(nodeParameters), 0)).rejects.toThrow(
 			ERROR_MESSAGES.WINDOW_ID_REQUIRED,
 		);
+	});
+
+	it("should query the page with 'includeVisualAnalysis' enabled", async () => {
+		const nodeParameters = {
+			...baseNodeParameters,
+			prompt: 'List the colors of the products on the page',
+			additionalFields: {
+				includeVisualAnalysis: true,
+			},
+		};
+
+		const result = await query.execute.call(createMockExecuteFunction(nodeParameters), 0);
+
+		expect(GenericFunctions.shouldCreateNewSession).toHaveBeenCalledTimes(1);
+		expect(GenericFunctions.createSessionAndWindow).not.toHaveBeenCalled();
+		expect(transport.apiRequest).toHaveBeenCalledTimes(1);
+		expect(transport.apiRequest).toHaveBeenCalledWith(
+			'POST',
+			'/sessions/test-session-123/windows/win-123/page-query',
+			{
+				prompt: 'List the colors of the products on the page',
+				configuration: {
+					experimental: {
+						includeVisualAnalysis: 'enabled',
+					},
+				},
+			},
+		);
+
+		expect(result).toEqual([
+			{
+				json: {
+					sessionId: 'test-session-123',
+					windowId: 'win-123',
+					data: mockResponse.data,
+				},
+			},
+		]);
+	});
+
+	it("should query the page with 'includeVisualAnalysis' disabled", async () => {
+		const nodeParameters = {
+			...baseNodeParameters,
+			prompt: 'How many products are on the page and what is their price range?',
+			additionalFields: {
+				includeVisualAnalysis: false,
+			},
+		};
+
+		const result = await query.execute.call(createMockExecuteFunction(nodeParameters), 0);
+
+		expect(GenericFunctions.shouldCreateNewSession).toHaveBeenCalledTimes(1);
+		expect(GenericFunctions.createSessionAndWindow).not.toHaveBeenCalled();
+		expect(transport.apiRequest).toHaveBeenCalledTimes(1);
+		expect(transport.apiRequest).toHaveBeenCalledWith(
+			'POST',
+			'/sessions/test-session-123/windows/win-123/page-query',
+			{
+				prompt: 'How many products are on the page and what is their price range?',
+				configuration: {
+					experimental: {
+						includeVisualAnalysis: 'disabled',
+					},
+				},
+			},
+		);
+
+		expect(result).toEqual([
+			{
+				json: {
+					sessionId: 'test-session-123',
+					windowId: 'win-123',
+					data: mockResponse.data,
+				},
+			},
+		]);
 	});
 });

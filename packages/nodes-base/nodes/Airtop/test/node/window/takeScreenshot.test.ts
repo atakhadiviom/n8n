@@ -19,6 +19,14 @@ const mockResponse = {
 
 const mockBinaryBuffer = Buffer.from('mock-binary-data');
 
+const expectedJsonResult = {
+	json: {
+		sessionId: 'test-session-123',
+		windowId: 'win-123',
+		image: 'base64-encoded-image-data',
+	},
+};
+
 const expectedBinaryResult = {
 	binary: {
 		data: {
@@ -30,11 +38,11 @@ const expectedBinaryResult = {
 	},
 };
 
-jest.mock('../../../transport', () => {
-	const originalModule = jest.requireActual<typeof transport>('../../../transport');
+vi.mock('../../../transport', async () => {
+	const originalModule = await vi.importActual<typeof transport>('../../../transport');
 	return {
 		...originalModule,
-		apiRequest: jest.fn(async function () {
+		apiRequest: vi.fn(async function () {
 			return {
 				status: 'success',
 				...mockResponse,
@@ -43,25 +51,22 @@ jest.mock('../../../transport', () => {
 	};
 });
 
-jest.mock('../../../GenericFunctions', () => {
-	const originalModule = jest.requireActual<typeof GenericFunctions>('../../../GenericFunctions');
+vi.mock('../../../GenericFunctions', async () => {
+	const originalModule = await vi.importActual<typeof GenericFunctions>(
+		'../../../GenericFunctions',
+	);
 	return {
 		...originalModule,
-		convertScreenshotToBinary: jest.fn(() => mockBinaryBuffer),
+		convertScreenshotToBinary: vi.fn(() => mockBinaryBuffer),
 	};
 });
 
 describe('Test Airtop, take screenshot operation', () => {
-	afterAll(() => {
-		jest.unmock('../../../transport');
-		jest.unmock('../../../GenericFunctions');
-	});
-
 	afterEach(() => {
-		jest.clearAllMocks();
+		vi.clearAllMocks();
 	});
 
-	it('should take screenshot successfully', async () => {
+	it('should take screenshot in base64 format', async () => {
 		const result = await takeScreenshot.execute.call(
 			createMockExecuteFunction({ ...baseNodeParameters }),
 			0,
@@ -73,23 +78,14 @@ describe('Test Airtop, take screenshot operation', () => {
 			'/sessions/test-session-123/windows/win-123/screenshot',
 		);
 
-		expect(result).toEqual([
-			{
-				json: {
-					sessionId: 'test-session-123',
-					windowId: 'win-123',
-					status: 'success',
-					...mockResponse,
-				},
-				...expectedBinaryResult,
-			},
-		]);
+		expect(result).toEqual([{ ...expectedJsonResult }]);
 	});
 
-	it('should transform screenshot to binary data', async () => {
+	it('should take screenshot in binary format', async () => {
 		const result = await takeScreenshot.execute.call(
 			createMockExecuteFunction({
 				...baseNodeParameters,
+				outputImageAsBinary: true,
 			}),
 			0,
 		);
@@ -106,12 +102,7 @@ describe('Test Airtop, take screenshot operation', () => {
 
 		expect(result).toEqual([
 			{
-				json: {
-					sessionId: 'test-session-123',
-					windowId: 'win-123',
-					status: 'success',
-					...mockResponse,
-				},
+				json: { ...expectedJsonResult.json, image: '' },
 				...expectedBinaryResult,
 			},
 		]);

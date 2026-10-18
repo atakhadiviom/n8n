@@ -1,4 +1,5 @@
 import type { CreateFolderDto, DeleteFolderDto, UpdateFolderDto } from '@n8n/api-types';
+import { EventService } from '@n8n/backend-services';
 import type {
 	FolderWithWorkflowAndSubFolderCount,
 	FolderWithWorkflowAndSubFolderCountAndPath,
@@ -6,7 +7,6 @@ import type {
 } from '@n8n/db';
 import { Folder, FolderTagMappingRepository, FolderRepository, WorkflowRepository } from '@n8n/db';
 import { Service } from '@n8n/di';
-// eslint-disable-next-line n8n-local-rules/misplaced-n8n-typeorm-import
 import type { EntityManager } from '@n8n/typeorm';
 import { UserError, PROJECT_ROOT } from 'n8n-workflow';
 
@@ -33,15 +33,17 @@ export class FolderService {
 		private readonly folderTagMappingRepository: FolderTagMappingRepository,
 		private readonly workflowRepository: WorkflowRepository,
 		private readonly workflowService: WorkflowService,
+		private readonly eventService: EventService,
 	) {}
 
-	async createFolder({ parentFolderId, name }: CreateFolderDto, projectId: string) {
+	async createFolder({ parentFolderId, name }: CreateFolderDto, projectId: string, id?: string) {
 		let parentFolder = null;
 		if (parentFolderId) {
 			parentFolder = await this.findFolderInProjectOrFail(parentFolderId, projectId);
 		}
 
 		const folderEntity = this.folderRepository.create({
+			...(id ? { id } : {}),
 			name,
 			homeProject: { id: projectId },
 			parentFolder,
@@ -50,6 +52,22 @@ export class FolderService {
 		const { homeProject, ...folder } = await this.folderRepository.save(folderEntity);
 
 		return folder;
+	}
+
+	async getFoldersByIds(folderIds: string[]): Promise<Folder[]> {
+		return await this.folderRepository.findManyByIds(folderIds);
+	}
+
+	/** Every folder a project holds, flat, with the parent each one sits under (`null` at the root). */
+	async getFolderPlacementsInProject(
+		projectId: string,
+	): Promise<Array<{ id: string; name: string; parentFolderId: string | null }>> {
+		const folders = await this.folderRepository.find({
+			where: { homeProject: { id: projectId } },
+			select: { id: true, name: true, parentFolderId: true },
+		});
+
+		return folders.map(({ id, name, parentFolderId }) => ({ id, name, parentFolderId }));
 	}
 
 	async updateFolder(
@@ -72,12 +90,23 @@ export class FolderService {
 
 			if (parentFolderId !== PROJECT_ROOT) {
 				await this.findFolderInProjectOrFail(parentFolderId, projectId);
+
+				// Ensure that the target parentFolder isn't a descendant of the current folder.
+				const parentFolderPath = await this.getFolderTree(parentFolderId, projectId);
+				if (this.isDescendant(folderId, parentFolderPath)) {
+					throw new UserError(
+						"Cannot set a folder's parent to a folder that is a descendant of the current folder",
+					);
+				}
 			}
+
 			await this.folderRepository.update(
 				{ id: folderId },
 				{ parentFolder: parentFolderId !== PROJECT_ROOT ? { id: parentFolderId } : null },
 			);
 		}
+
+		return await this.findFolderInProjectOrFail(folderId, projectId);
 	}
 
 	async findFolderInProjectOrFail(folderId: string, projectId: string, em?: EntityManager) {
@@ -143,7 +172,7 @@ export class FolderService {
 		);
 
 		for (const workflowId of workflowIds) {
-			await this.workflowService.archive(user, workflowId, true);
+			await this.workflowService.archive(user, workflowId, { skipArchived: true });
 		}
 
 		await this.workflowRepository.moveToFolder(workflowIds, PROJECT_ROOT);
@@ -160,6 +189,7 @@ export class FolderService {
 		if (!transferToFolderId) {
 			await this.flattenAndArchive(user, folderId, projectId);
 			await this.folderRepository.delete({ id: folderId });
+			this.eventService.emit('folder-deleted', { folderId, projectId });
 			return;
 		}
 
@@ -171,12 +201,12 @@ export class FolderService {
 			await this.findFolderInProjectOrFail(transferToFolderId, projectId);
 		}
 
-		return await this.folderRepository.manager.transaction(async (tx) => {
+		await this.folderRepository.manager.transaction(async (tx) => {
 			await this.folderRepository.moveAllToFolder(folderId, transferToFolderId, tx);
 			await this.workflowRepository.moveAllToFolder(folderId, transferToFolderId, tx);
 			await tx.delete(Folder, { id: folderId });
-			return;
 		});
+		this.eventService.emit('folder-deleted', { folderId, projectId });
 	}
 
 	async transferAllFoldersToProject(
@@ -220,11 +250,20 @@ export class FolderService {
 		return rootNode ? [rootNode] : [];
 	}
 
-	async getFolderAndWorkflowCount(
+	private isDescendant(folderId: string, tree: SimpleFolderNode[]): boolean {
+		return tree.some((node) => {
+			if (node.id === folderId) {
+				return true;
+			}
+			return this.isDescendant(folderId, node.children);
+		});
+	}
+
+	async findFolderWithContentCounts(
 		folderId: string,
 		projectId: string,
-	): Promise<{ totalSubFolders: number; totalWorkflows: number }> {
-		await this.findFolderInProjectOrFail(folderId, projectId);
+	): Promise<{ folder: Folder; totalSubFolders: number; totalWorkflows: number }> {
+		const folder = await this.findFolderInProjectOrFail(folderId, projectId);
 
 		const baseQuery = this.folderRepository
 			.createQueryBuilder('folder')
@@ -278,12 +317,16 @@ export class FolderService {
 		]);
 
 		return {
+			folder,
 			totalSubFolders: parseInt(subFolderResult?.count ?? '0', 10),
 			totalWorkflows: parseInt(workflowResult?.count ?? '0', 10),
 		};
 	}
 
-	async getManyAndCount(projectId: string, options: ListQuery.Options) {
+	async getManyAndCount(
+		projectId: string,
+		options: ListQuery.Options,
+	): Promise<[FolderWithWorkflowAndSubFolderCountAndPath[], number]> {
 		options.filter = { ...options.filter, projectId, isArchived: false };
 		// eslint-disable-next-line prefer-const
 		let [folders, count] = await this.folderRepository.getManyAndCount(options);

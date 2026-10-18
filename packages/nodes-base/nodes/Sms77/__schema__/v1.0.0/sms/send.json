@@ -9,26 +9,20 @@
             "items": {
                 "type": "object",
                 "properties": {
-                    "encoding": {
-                        "type": "string"
-                    },
-                    "is_binary": {
-                        "type": "boolean"
-                    },
                     "label": {
                         "type": "null"
                     },
                     "parts": {
                         "type": "integer"
                     },
+                    "recipient": {
+                        "type": "string"
+                    },
                     "sender": {
                         "type": "string"
                     },
                     "success": {
                         "type": "boolean"
-                    },
-                    "text": {
-                        "type": "string"
                     },
                     "udh": {
                         "type": "null"
@@ -43,5 +37,5 @@
             "type": "string"
         }
     },
-    "version": 1
+    "version": 5
 }

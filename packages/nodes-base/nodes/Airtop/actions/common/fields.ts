@@ -30,13 +30,14 @@ export const windowIdField: INodeProperties = {
 };
 
 export const profileNameField: INodeProperties = {
-	displayName: 'Profile Name',
+	displayName: 'Browser Profile ID',
 	name: 'profileName',
 	type: 'string',
 	default: '',
-	description: 'The name of the Airtop profile to load or create',
+	description:
+		'The Airtop browser profile ID to load or create. Newer profiles are identified by a generated UUID; older ones can use a custom name.',
 	hint: '<a href="https://docs.airtop.ai/guides/how-to/saving-a-profile" target="_blank">Learn more</a> about Airtop profiles',
-	placeholder: 'e.g. my-x-profile',
+	placeholder: 'e.g. my-profile',
 };
 
 export const urlField: INodeProperties = {
@@ -59,6 +60,15 @@ export const outputSchemaField: INodeProperties = {
 	hint: 'If you want to force your output to be JSON, provide a valid JSON schema describing the output. You can generate one automatically in the <a href="https://portal.airtop.ai/" target="_blank">Airtop API Playground</a>.',
 	type: 'json',
 	default: '',
+};
+
+export const parseJsonOutputField: INodeProperties = {
+	displayName: 'Parse JSON Output',
+	name: 'parseJsonOutput',
+	type: 'boolean',
+	default: true,
+	description:
+		"Whether to parse the model's response to JSON in the output. Requires the 'JSON Output Schema' parameter to be set.",
 };
 
 /**
@@ -154,3 +164,11 @@ export function getSessionModeFields(resource: string, operations: string[]): IN
 		},
 	];
 }
+
+export const includeHiddenElementsField: INodeProperties = {
+	displayName: 'Include Hidden Elements',
+	name: 'includeHiddenElements',
+	type: 'boolean',
+	default: true,
+	description: 'Whether to include hidden elements in the interaction',
+};

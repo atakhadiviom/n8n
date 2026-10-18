@@ -1,6 +1,14 @@
 import type { INodeTypeDescription } from 'n8n-workflow';
 
-export interface CommunityNodeAttributes {
+/** Temporary Gateway credits offer for a community node. Dates are ISO datetimes. */
+export type GatewayCreditsPromotion = {
+	text: string;
+	startsAt?: string | null;
+	endsAt?: string | null;
+};
+
+export type CommunityNodeType = {
+	id: number;
 	authorGithubUrl: string;
 	authorName: string;
 	checksum: string;
@@ -13,11 +21,10 @@ export interface CommunityNodeAttributes {
 	createdAt: string;
 	updatedAt: string;
 	npmVersion: string;
-}
-
-export interface CommunityNodeData {
-	id: number;
-	attributes: CommunityNodeAttributes & {
-		nodeDescription: INodeTypeDescription;
-	};
-}
+	isOfficialNode: boolean;
+	companyName?: string;
+	nodeDescription: INodeTypeDescription;
+	isInstalled: boolean;
+	nodeVersions?: Array<{ npmVersion: string; checksum: string }>;
+	gatewayCreditsPromotion?: GatewayCreditsPromotion | null;
+};

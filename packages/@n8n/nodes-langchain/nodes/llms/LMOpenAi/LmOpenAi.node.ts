@@ -1,5 +1,10 @@
-/* eslint-disable n8n-nodes-base/node-dirname-against-convention */
 import { OpenAI, type ClientOptions } from '@langchain/openai';
+import {
+	getProxyAgent,
+	aiClientFetch,
+	makeN8nLlmFailedAttemptHandler,
+	N8nLlmTracing,
+} from '@n8n/ai-utilities';
 import { NodeConnectionTypes } from 'n8n-workflow';
 import type {
 	INodeType,
@@ -9,10 +14,11 @@ import type {
 	ILoadOptionsFunctions,
 } from 'n8n-workflow';
 
-import { getHttpProxyAgent } from '@utils/httpProxyAgent';
+import { Container } from '@n8n/di';
+import { AiConfig } from '@n8n/config';
+import { getCustomCredentialHeader, mergeCustomHeaders } from '@utils/helpers';
 
-import { makeN8nLlmFailedAttemptHandler } from '../n8nLlmFailedAttemptHandler';
-import { N8nLlmTracing } from '../N8nLlmTracing';
+import { assertOpenAiCredentialAllowsUrl } from '../../vendors/OpenAi/helpers/credentials';
 
 type LmOpenAiOptions = {
 	baseURL?: string;
@@ -28,7 +34,7 @@ type LmOpenAiOptions = {
 export class LmOpenAi implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'OpenAI Model',
-		// eslint-disable-next-line n8n-nodes-base/node-class-description-name-miscased
+
 		name: 'lmOpenAi',
 		hidden: true,
 		icon: { light: 'file:openAiLight.svg', dark: 'file:openAiLight.dark.svg' },
@@ -52,9 +58,9 @@ export class LmOpenAi implements INodeType {
 				],
 			},
 		},
-		// eslint-disable-next-line n8n-nodes-base/node-class-description-inputs-wrong-regular-node
+
 		inputs: [],
-		// eslint-disable-next-line n8n-nodes-base/node-class-description-outputs-wrong
+
 		outputs: [NodeConnectionTypes.AiLanguageModel],
 		outputNames: ['Model'],
 		credentials: [
@@ -83,7 +89,7 @@ export class LmOpenAi implements INodeType {
 				default: { mode: 'list', value: 'gpt-3.5-turbo-instruct' },
 				required: true,
 				description:
-					'The model which will generate the completion. <a href="https://beta.openai.com/docs/models/overview">Learn more</a>.',
+					'The model which will generate the completion. <a href="https://developers.openai.com/api/docs/models">Learn more</a>.',
 				modes: [
 					{
 						displayName: 'From List',
@@ -208,8 +214,15 @@ export class LmOpenAi implements INodeType {
 				const options = this.getNodeParameter('options', {}) as LmOpenAiOptions;
 
 				let uri = 'https://api.openai.com/v1/models';
+				let allowedDomains: string | undefined;
 
 				if (options.baseURL) {
+					const credentials = await this.getCredentials('openAiApi');
+					allowedDomains = assertOpenAiCredentialAllowsUrl(
+						this.getNode(),
+						credentials,
+						options.baseURL,
+					);
 					uri = `${options.baseURL}/models`;
 				}
 
@@ -217,6 +230,7 @@ export class LmOpenAi implements INodeType {
 					method: 'GET',
 					uri,
 					json: true,
+					allowedDomains,
 				})) as { data: Array<{ owned_by: string; id: string }> };
 
 				for (const model of data) {
@@ -250,21 +264,40 @@ export class LmOpenAi implements INodeType {
 			topP?: number;
 		};
 
+		const { openAiDefaultHeaders } = Container.get(AiConfig);
+		const customHeader = getCustomCredentialHeader(credentials);
+		const defaultHeaders = mergeCustomHeaders(credentials, openAiDefaultHeaders ?? {});
+		const timeout = options.timeout;
 		const configuration: ClientOptions = {
-			httpAgent: getHttpProxyAgent(),
+			fetch: aiClientFetch,
+			fetchOptions: {
+				dispatcher: getProxyAgent(
+					options.baseURL ?? 'https://api.openai.com/v1',
+					{
+						headersTimeout: timeout,
+						bodyTimeout: timeout,
+					},
+					this.helpers.getSecureEgressFilter(),
+				),
+			},
+			defaultHeaders,
 		};
+
 		if (options.baseURL) {
+			assertOpenAiCredentialAllowsUrl(this.getNode(), credentials, options.baseURL);
 			configuration.baseURL = options.baseURL;
 		}
 
 		const model = new OpenAI({
-			openAIApiKey: credentials.apiKey as string,
-			modelName,
+			apiKey: credentials.apiKey as string,
+			model: modelName,
 			...options,
 			configuration,
-			timeout: options.timeout ?? 60000,
+			timeout,
 			maxRetries: options.maxRetries ?? 2,
-			callbacks: [new N8nLlmTracing(this)],
+			callbacks: [
+				new N8nLlmTracing(this, { redactedHeaders: customHeader ? [customHeader.name] : [] }),
+			],
 			onFailedAttempt: makeN8nLlmFailedAttemptHandler(this),
 		});
 

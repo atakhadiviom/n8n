@@ -1,5 +1,5 @@
 import { Column, Entity, ManyToOne, OneToOne } from '@n8n/typeorm';
-import type { IDataObject } from 'n8n-workflow';
+import type { IDataObject, JsonObject } from 'n8n-workflow';
 
 import { WithStringId, DateTimeColumn, JsonColumn } from './abstract-entity';
 import type { ExecutionEntity } from './execution-entity';
@@ -19,7 +19,7 @@ export type TestCaseExecutionStatus =
 
 /**
  * This entity represents the linking between the test runs and individual executions.
- * It stores status, links to past, new and evaluation executions, and metrics produced by individual evaluation wf executions
+ * It stores status, link to the evaluation execution, and metrics produced by individual test case
  * Entries in this table are meant to outlive the execution entities, which might be pruned over time.
  * This allows us to keep track of the details of test runs' status and metrics even after the executions are deleted.
  */
@@ -27,15 +27,6 @@ export type TestCaseExecutionStatus =
 export class TestCaseExecution extends WithStringId {
 	@ManyToOne('TestRun')
 	testRun: TestRun;
-
-	@ManyToOne('ExecutionEntity', {
-		onDelete: 'SET NULL',
-		nullable: true,
-	})
-	pastExecution: ExecutionEntity | null;
-
-	@Column({ type: 'varchar', nullable: true })
-	pastExecutionId: string | null;
 
 	@OneToOne('ExecutionEntity', {
 		onDelete: 'SET NULL',
@@ -46,17 +37,17 @@ export class TestCaseExecution extends WithStringId {
 	@Column({ type: 'varchar', nullable: true })
 	executionId: string | null;
 
-	@OneToOne('ExecutionEntity', {
-		onDelete: 'SET NULL',
-		nullable: true,
-	})
-	evaluationExecution: ExecutionEntity | null;
-
-	@Column({ type: 'varchar', nullable: true })
-	evaluationExecutionId: string | null;
-
 	@Column()
 	status: TestCaseExecutionStatus;
+
+	/**
+	 * Sequential index of this case within its test run, set when the run is
+	 * seeded with one row per dataset entry. Used to order pending/running
+	 * cases on the run detail page (since `runAt` is null until each case
+	 * actually starts).
+	 */
+	@Column('integer', { nullable: true })
+	runIndex: number | null;
 
 	@DateTimeColumn({ nullable: true })
 	runAt: Date | null;
@@ -72,4 +63,10 @@ export class TestCaseExecution extends WithStringId {
 
 	@JsonColumn({ nullable: true })
 	metrics: TestCaseRunMetrics;
+
+	@JsonColumn({ nullable: true })
+	inputs: JsonObject | null;
+
+	@JsonColumn({ nullable: true })
+	outputs: JsonObject | null;
 }

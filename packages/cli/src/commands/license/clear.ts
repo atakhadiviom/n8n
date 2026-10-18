@@ -1,18 +1,19 @@
+import { Command } from '@n8n/decorators';
 import { Container } from '@n8n/di';
 
 import { License } from '@/license';
 
 import { BaseCommand } from '../base-command';
 
+@Command({
+	name: 'license:clear',
+	description: 'Clear local license certificate',
+})
 export class ClearLicenseCommand extends BaseCommand {
-	static description = 'Clear local license certificate';
-
-	static examples = ['$ n8n license:clear'];
-
 	async run() {
 		this.logger.info('Clearing license from database.');
 
-		// Attempt to invoke shutdown() to force any floating entitlements to be released
+		// clear() releases any floating entitlements before it deletes the cert
 		const license = Container.get(License);
 		await license.init({ isCli: true });
 		await license.clear();

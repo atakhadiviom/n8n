@@ -11,6 +11,7 @@ export type PasswordResetData = {
 
 export type SendEmailResult = {
 	emailSent: boolean;
+	errors?: string[];
 };
 
 export type MailData = {
@@ -18,4 +19,17 @@ export type MailData = {
 	emailRecipients: string | string[];
 	subject: string;
 	textOnly?: string;
+};
+
+export type EmailChangeConfirmationData = {
+	email: string; // current (old) address — the recipient
+	firstName: string;
+	newEmail: string;
+	confirmationUrl: string;
+};
+
+export type EmailChangeCompletedData = {
+	email: string; // old address — the recipient
+	firstName: string;
+	newEmail: string;
 };

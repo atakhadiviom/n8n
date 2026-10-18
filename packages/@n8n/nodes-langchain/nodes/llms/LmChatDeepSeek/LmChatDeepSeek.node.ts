@@ -1,6 +1,11 @@
-/* eslint-disable n8n-nodes-base/node-dirname-against-convention */
-
 import { ChatOpenAI, type ClientOptions } from '@langchain/openai';
+import {
+	getProxyAgent,
+	aiClientFetch,
+	makeN8nLlmFailedAttemptHandler,
+	N8nLlmTracing,
+	getConnectionHintNoticeField,
+} from '@n8n/ai-utilities';
 import {
 	NodeConnectionTypes,
 	type INodeType,
@@ -9,17 +14,15 @@ import {
 	type SupplyData,
 } from 'n8n-workflow';
 
-import { getHttpProxyAgent } from '@utils/httpProxyAgent';
-import { getConnectionHintNoticeField } from '@utils/sharedFields';
+import { MODEL_SELECTION_HINT } from '@utils/model-builder-hints';
 
+import type { OpenAICompatibleCredential } from '../../../types/types';
 import { openAiFailedAttemptHandler } from '../../vendors/OpenAi/helpers/error-handling';
-import { makeN8nLlmFailedAttemptHandler } from '../n8nLlmFailedAttemptHandler';
-import { N8nLlmTracing } from '../N8nLlmTracing';
 
 export class LmChatDeepSeek implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'DeepSeek Chat Model',
-		// eslint-disable-next-line n8n-nodes-base/node-class-description-name-miscased
+
 		name: 'lmChatDeepSeek',
 		icon: 'file:deepseek.svg',
 		group: ['transform'],
@@ -42,9 +45,9 @@ export class LmChatDeepSeek implements INodeType {
 				],
 			},
 		},
-		// eslint-disable-next-line n8n-nodes-base/node-class-description-inputs-wrong-regular-node
+
 		inputs: [],
-		// eslint-disable-next-line n8n-nodes-base/node-class-description-outputs-wrong
+
 		outputs: [NodeConnectionTypes.AiLanguageModel],
 		outputNames: ['Model'],
 		credentials: [
@@ -117,6 +120,11 @@ export class LmChatDeepSeek implements INodeType {
 					},
 				},
 				default: 'deepseek-chat',
+				builderHint: {
+					propertyHint:
+						'Choose deepseek-chat or deepseek-reasoner according to the task. Confirm their current capabilities in the provider documentation instead of assuming a fixed underlying version. ' +
+						MODEL_SELECTION_HINT,
+				},
 			},
 			{
 				displayName: 'Options',
@@ -227,16 +235,27 @@ export class LmChatDeepSeek implements INodeType {
 			responseFormat?: 'text' | 'json_object';
 		};
 
+		const timeout = options.timeout;
 		const configuration: ClientOptions = {
 			baseURL: credentials.url,
-			httpAgent: getHttpProxyAgent(),
+			fetch: aiClientFetch,
+			fetchOptions: {
+				dispatcher: getProxyAgent(
+					credentials.url,
+					{
+						headersTimeout: timeout,
+						bodyTimeout: timeout,
+					},
+					this.helpers.getSecureEgressFilter(),
+				),
+			},
 		};
 
 		const model = new ChatOpenAI({
-			openAIApiKey: credentials.apiKey,
-			modelName,
+			apiKey: credentials.apiKey,
+			model: modelName,
 			...options,
-			timeout: options.timeout ?? 60000,
+			timeout,
 			maxRetries: options.maxRetries ?? 2,
 			configuration,
 			callbacks: [new N8nLlmTracing(this)],

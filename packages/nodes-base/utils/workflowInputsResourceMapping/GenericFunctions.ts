@@ -1,6 +1,6 @@
 import { json as generateSchemaFromExample, type SchemaObject } from 'generate-schema';
 import type { JSONSchema7 } from 'json-schema';
-import _ from 'lodash';
+import pickBy from 'lodash/pickBy';
 import type {
 	FieldValueOption,
 	FieldType,
@@ -157,7 +157,7 @@ export function getCurrentWorkflowInputData(this: IExecuteFunctions | ISupplyDat
 		const filteredInputData: INodeExecutionData[] = inputData.map(({ json, binary }, index) => ({
 			index,
 			pairedItem: { item: index },
-			json: _.pickBy(json, (_v, key) => !removedKeys.has(key)),
+			json: pickBy(json, (_v, key) => !removedKeys.has(key)),
 			binary,
 		}));
 
@@ -168,6 +168,8 @@ export function getCurrentWorkflowInputData(this: IExecuteFunctions | ISupplyDat
 export async function loadWorkflowInputMappings(
 	this: ILocalLoadOptionsFunctions,
 ): Promise<WorkflowInputsData> {
+	// Use the draft subworkflow so the parent editor reflects unsaved/unpublished
+	// trigger input changes (manual runs already resolve against draft).
 	const nodeLoadContext = await this.getWorkflowNodeContext(EXECUTE_WORKFLOW_TRIGGER_NODE_TYPE);
 	let fields: ResourceMapperField[] = [];
 	let dataMode: string = PASSTHROUGH;

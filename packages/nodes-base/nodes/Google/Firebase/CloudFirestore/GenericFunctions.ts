@@ -7,7 +7,7 @@ import type {
 	IHttpRequestMethods,
 	IRequestOptions,
 } from 'n8n-workflow';
-import { NodeApiError } from 'n8n-workflow';
+import { isSafeObjectProperty, NodeApiError } from 'n8n-workflow';
 
 import { getGoogleAccessToken } from '../../GenericFunctions';
 
@@ -82,24 +82,26 @@ export async function googleApiRequestAllItems(
 const isValidDate = (str: string) =>
 	moment(str, ['YYYY-MM-DD HH:mm:ss Z', moment.ISO_8601], true).isValid();
 
-const protoKeys = ['__proto__', 'prototype', 'constructor'];
-
 // Both functions below were taken from Stack Overflow jsonToDocument was fixed as it was unable to handle null values correctly
 // https://stackoverflow.com/questions/62246410/how-to-convert-a-firestore-document-to-plain-json-and-vice-versa
 // Great thanks to https://stackoverflow.com/users/3915246/mahindar
-export function jsonToDocument(value: string | number | IDataObject | IDataObject[]): IDataObject {
+export function jsonToDocument(
+	value: string | number | boolean | null | undefined | IDataObject | IDataObject[],
+): IDataObject {
 	if (value === 'true' || value === 'false' || typeof value === 'boolean') {
 		return { booleanValue: value };
+	} else if (value === undefined) {
+		return { nullValue: null };
 	} else if (value === null) {
 		return { nullValue: null };
-	} else if (value !== '' && !isNaN(value as number)) {
+	} else if (typeof value === 'number' && !Number.isNaN(value)) {
 		if (value.toString().indexOf('.') !== -1) {
 			return { doubleValue: value };
 		} else {
 			return { integerValue: value };
 		}
-	} else if (isValidDate(value as string)) {
-		const date = new Date(Date.parse(value as string));
+	} else if (typeof value === 'string' && /[-T:]/.test(value) && isValidDate(value)) {
+		const date = new Date(Date.parse(value));
 		return { timestampValue: date.toISOString() };
 	} else if (typeof value === 'string') {
 		return { stringValue: value };
@@ -108,7 +110,7 @@ export function jsonToDocument(value: string | number | IDataObject | IDataObjec
 	} else if (typeof value === 'object') {
 		const obj: IDataObject = {};
 		for (const key of Object.keys(value)) {
-			if (value.hasOwnProperty(key) && !protoKeys.includes(key)) {
+			if (Object.prototype.hasOwnProperty.call(value, key) && isSafeObjectProperty(key)) {
 				obj[key] = jsonToDocument((value as IDataObject)[key] as IDataObject);
 			}
 		}
@@ -154,7 +156,7 @@ export function documentToJson(fields: IDataObject): IDataObject {
 				// @ts-ignore
 				const list = value.values as IDataObject[];
 				// @ts-ignore
-				return !!list ? list.map((l) => documentToJson(l)) : [];
+				return list ? list.map((l) => documentToJson(l)) : [];
 			}
 		} else {
 			// @ts-ignore

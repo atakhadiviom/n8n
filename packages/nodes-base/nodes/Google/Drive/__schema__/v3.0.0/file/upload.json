@@ -7,13 +7,22 @@
                 "canAcceptOwnership": {
                     "type": "boolean"
                 },
+                "canAccessViaGenAi": {
+                    "type": "boolean"
+                },
                 "canAddChildren": {
+                    "type": "boolean"
+                },
+                "canAddFolderFromAnotherDrive": {
                     "type": "boolean"
                 },
                 "canAddMyDriveParent": {
                     "type": "boolean"
                 },
                 "canChangeCopyRequiresWriterPermission": {
+                    "type": "boolean"
+                },
+                "canChangeItemDownloadRestriction": {
                     "type": "boolean"
                 },
                 "canChangeSecurityUpdateEnabled": {
@@ -29,6 +38,9 @@
                     "type": "boolean"
                 },
                 "canDelete": {
+                    "type": "boolean"
+                },
+                "canDeleteChildren": {
                     "type": "boolean"
                 },
                 "canDisableInheritedPermissions": {
@@ -61,7 +73,16 @@
                 "canModifyOwnerContentRestriction": {
                     "type": "boolean"
                 },
+                "canMoveChildrenOutOfDrive": {
+                    "type": "boolean"
+                },
+                "canMoveChildrenOutOfTeamDrive": {
+                    "type": "boolean"
+                },
                 "canMoveChildrenWithinDrive": {
+                    "type": "boolean"
+                },
+                "canMoveChildrenWithinTeamDrive": {
                     "type": "boolean"
                 },
                 "canMoveItemIntoTeamDrive": {
@@ -70,13 +91,28 @@
                 "canMoveItemOutOfDrive": {
                     "type": "boolean"
                 },
+                "canMoveItemOutOfTeamDrive": {
+                    "type": "boolean"
+                },
                 "canMoveItemWithinDrive": {
+                    "type": "boolean"
+                },
+                "canMoveItemWithinTeamDrive": {
+                    "type": "boolean"
+                },
+                "canMoveTeamDriveItem": {
+                    "type": "boolean"
+                },
+                "canReadDrive": {
                     "type": "boolean"
                 },
                 "canReadLabels": {
                     "type": "boolean"
                 },
                 "canReadRevisions": {
+                    "type": "boolean"
+                },
+                "canReadTeamDrive": {
                     "type": "boolean"
                 },
                 "canRemoveChildren": {
@@ -94,7 +130,13 @@
                 "canShare": {
                     "type": "boolean"
                 },
+                "canStartApproval": {
+                    "type": "boolean"
+                },
                 "canTrash": {
+                    "type": "boolean"
+                },
+                "canTrashChildren": {
                     "type": "boolean"
                 },
                 "canUntrash": {
@@ -102,10 +144,65 @@
                 }
             }
         },
+        "clientEncryptionDetails": {
+            "type": "object",
+            "properties": {
+                "decryptionMetadata": {
+                    "type": "object",
+                    "properties": {
+                        "aes256GcmChunkSize": {
+                            "type": "string"
+                        },
+                        "encryptionResourceKeyHash": {
+                            "type": "string"
+                        },
+                        "kaclsId": {
+                            "type": "string"
+                        },
+                        "keyFormat": {
+                            "type": "string"
+                        },
+                        "wrappedKey": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "copyRequiresWriterPermission": {
             "type": "boolean"
         },
         "createdTime": {
+            "type": "string"
+        },
+        "downloadRestrictions": {
+            "type": "object",
+            "properties": {
+                "effectiveDownloadRestrictionWithContext": {
+                    "type": "object",
+                    "properties": {
+                        "restrictedForReaders": {
+                            "type": "boolean"
+                        },
+                        "restrictedForWriters": {
+                            "type": "boolean"
+                        }
+                    }
+                },
+                "itemDownloadRestriction": {
+                    "type": "object",
+                    "properties": {
+                        "restrictedForReaders": {
+                            "type": "boolean"
+                        },
+                        "restrictedForWriters": {
+                            "type": "boolean"
+                        }
+                    }
+                }
+            }
+        },
+        "driveId": {
             "type": "string"
         },
         "explicitlyTrashed": {
@@ -116,6 +213,9 @@
         },
         "fullFileExtension": {
             "type": "string"
+        },
+        "hasAugmentedPermissions": {
+            "type": "boolean"
         },
         "hasThumbnail": {
             "type": "boolean"
@@ -128,6 +228,20 @@
         },
         "id": {
             "type": "string"
+        },
+        "imageMediaMetadata": {
+            "type": "object",
+            "properties": {
+                "height": {
+                    "type": "integer"
+                },
+                "rotation": {
+                    "type": "integer"
+                },
+                "width": {
+                    "type": "integer"
+                }
+            }
         },
         "inheritedPermissionsDisabled": {
             "type": "boolean"
@@ -290,6 +404,12 @@
         "starred": {
             "type": "boolean"
         },
+        "teamDriveId": {
+            "type": "string"
+        },
+        "thumbnailLink": {
+            "type": "string"
+        },
         "thumbnailVersion": {
             "type": "string"
         },
@@ -315,5 +435,5 @@
             "type": "boolean"
         }
     },
-    "version": 1
+    "version": 9
 }

@@ -1,5 +1,10 @@
-/* eslint-disable n8n-nodes-base/node-dirname-against-convention */
 import { ChatGroq } from '@langchain/groq';
+import {
+	proxyFetch,
+	makeN8nLlmFailedAttemptHandler,
+	N8nLlmTracing,
+	getConnectionHintNoticeField,
+} from '@n8n/ai-utilities';
 import {
 	NodeConnectionTypes,
 	type INodeType,
@@ -8,16 +13,12 @@ import {
 	type SupplyData,
 } from 'n8n-workflow';
 
-import { getHttpProxyAgent } from '@utils/httpProxyAgent';
-import { getConnectionHintNoticeField } from '@utils/sharedFields';
-
-import { makeN8nLlmFailedAttemptHandler } from '../n8nLlmFailedAttemptHandler';
-import { N8nLlmTracing } from '../N8nLlmTracing';
+import { MODEL_SELECTION_HINT } from '@utils/model-builder-hints';
 
 export class LmChatGroq implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Groq Chat Model',
-		// eslint-disable-next-line n8n-nodes-base/node-class-description-name-miscased
+
 		name: 'lmChatGroq',
 		icon: 'file:groq.svg',
 		group: ['transform'],
@@ -40,9 +41,9 @@ export class LmChatGroq implements INodeType {
 				],
 			},
 		},
-		// eslint-disable-next-line n8n-nodes-base/node-class-description-inputs-wrong-regular-node
+
 		inputs: [],
-		// eslint-disable-next-line n8n-nodes-base/node-class-description-outputs-wrong
+
 		outputs: [NodeConnectionTypes.AiLanguageModel],
 		outputNames: ['Model'],
 		credentials: [
@@ -102,6 +103,9 @@ export class LmChatGroq implements INodeType {
 				description:
 					'The model which will generate the completion. <a href="https://console.groq.com/docs/models">Learn more</a>.',
 				default: 'llama3-8b-8192',
+				builderHint: {
+					propertyHint: MODEL_SELECTION_HINT,
+				},
 			},
 			{
 				displayName: 'Options',
@@ -141,13 +145,15 @@ export class LmChatGroq implements INodeType {
 			temperature: number;
 		};
 
+		const egressFilter = this.helpers.getSecureEgressFilter();
 		const model = new ChatGroq({
 			apiKey: credentials.apiKey as string,
-			modelName,
+			model: modelName,
 			maxTokens: options.maxTokensToSample,
 			temperature: options.temperature,
 			callbacks: [new N8nLlmTracing(this)],
-			httpAgent: getHttpProxyAgent(),
+			fetch: async (input: RequestInfo | URL, init?: RequestInit) =>
+				await proxyFetch({ input, init, egressFilter }),
 			onFailedAttempt: makeN8nLlmFailedAttemptHandler(this),
 		});
 

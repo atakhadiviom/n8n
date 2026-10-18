@@ -1,8 +1,9 @@
+import { mockInstance } from '@n8n/backend-test-utils';
 import { GlobalConfig } from '@n8n/config';
 import { Container } from '@n8n/di';
-import { mock } from 'jest-mock-extended';
 import { agent as testAgent } from 'supertest';
 import type SuperAgentTest from 'supertest/lib/agent';
+import { mock } from 'vitest-mock-extended';
 
 import { ExternalHooks } from '@/external-hooks';
 import { LiveWebhooks } from '@/webhooks/live-webhooks';
@@ -11,7 +12,6 @@ import { WaitingForms } from '@/webhooks/waiting-forms';
 import { WaitingWebhooks } from '@/webhooks/waiting-webhooks';
 import { WebhookServer } from '@/webhooks/webhook-server';
 import type { IWebhookResponseCallbackData } from '@/webhooks/webhook.types';
-import { mockInstance } from '@test/mocking';
 
 let agent: SuperAgentTest;
 

@@ -1,6 +1,184 @@
-// Jest Snapshot v1, https://goo.gl/fbAQLP
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`Test Summarize Node, aggregateAndSplitData should handle split field values containing spaces when convertKeysToString is not set: split-field-with-spaces-array 1`] = `
+exports[`Test Summarize Node, aggregateAndSplitData > should handle multiple split field values containing null when convertKeysToString is false > split-field-with-spaces-array 1`] = `
+[
+  {
+    "pairedItems": [
+      0,
+    ],
+    "returnData": {
+      "Product": "Widget A",
+      "Warehouse": "WH1",
+      "appended_Warehouse": [
+        "WH1",
+      ],
+    },
+  },
+  {
+    "pairedItems": [
+      2,
+    ],
+    "returnData": {
+      "Product": "Widget A",
+      "Warehouse": null,
+      "appended_Warehouse": [
+        null,
+      ],
+    },
+  },
+  {
+    "pairedItems": [
+      1,
+    ],
+    "returnData": {
+      "Product": null,
+      "Warehouse": "WH2",
+      "appended_Warehouse": [
+        "WH2",
+      ],
+    },
+  },
+]
+`;
+
+exports[`Test Summarize Node, aggregateAndSplitData > should handle multiple split field values containing null when convertKeysToString is false > split-field-with-spaces-result 1`] = `
+{
+  "fieldName": "Product",
+  "splits": Map {
+    "Widget A" => {
+      "fieldName": "Warehouse",
+      "splits": Map {
+        "WH1" => {
+          "pairedItems": [
+            0,
+          ],
+          "returnData": {
+            "appended_Warehouse": [
+              "WH1",
+            ],
+          },
+        },
+        null => {
+          "pairedItems": [
+            2,
+          ],
+          "returnData": {
+            "appended_Warehouse": [
+              null,
+            ],
+          },
+        },
+      },
+    },
+    null => {
+      "fieldName": "Warehouse",
+      "splits": Map {
+        "WH2" => {
+          "pairedItems": [
+            1,
+          ],
+          "returnData": {
+            "appended_Warehouse": [
+              "WH2",
+            ],
+          },
+        },
+      },
+    },
+  },
+}
+`;
+
+exports[`Test Summarize Node, aggregateAndSplitData > should handle multiple split field values containing null when convertKeysToString is true > split-field-with-spaces-array 1`] = `
+[
+  {
+    "pairedItems": [
+      0,
+    ],
+    "returnData": {
+      "Product": "Widget A",
+      "Warehouse": "WH1",
+      "appended_Warehouse": [
+        "WH1",
+      ],
+    },
+  },
+  {
+    "pairedItems": [
+      2,
+    ],
+    "returnData": {
+      "Product": "Widget A",
+      "Warehouse": "null",
+      "appended_Warehouse": [
+        null,
+      ],
+    },
+  },
+  {
+    "pairedItems": [
+      1,
+    ],
+    "returnData": {
+      "Product": "null",
+      "Warehouse": "WH2",
+      "appended_Warehouse": [
+        "WH2",
+      ],
+    },
+  },
+]
+`;
+
+exports[`Test Summarize Node, aggregateAndSplitData > should handle multiple split field values containing null when convertKeysToString is true > split-field-with-spaces-result 1`] = `
+{
+  "fieldName": "Product",
+  "splits": Map {
+    "Widget A" => {
+      "fieldName": "Warehouse",
+      "splits": Map {
+        "WH1" => {
+          "pairedItems": [
+            0,
+          ],
+          "returnData": {
+            "appended_Warehouse": [
+              "WH1",
+            ],
+          },
+        },
+        "null" => {
+          "pairedItems": [
+            2,
+          ],
+          "returnData": {
+            "appended_Warehouse": [
+              null,
+            ],
+          },
+        },
+      },
+    },
+    "null" => {
+      "fieldName": "Warehouse",
+      "splits": Map {
+        "WH2" => {
+          "pairedItems": [
+            1,
+          ],
+          "returnData": {
+            "appended_Warehouse": [
+              "WH2",
+            ],
+          },
+        },
+      },
+    },
+  },
+}
+`;
+
+exports[`Test Summarize Node, aggregateAndSplitData > should handle split field values containing spaces when convertKeysToString is not set > split-field-with-spaces-array 1`] = `
 [
   {
     "pairedItems": [
@@ -29,7 +207,7 @@ exports[`Test Summarize Node, aggregateAndSplitData should handle split field va
 ]
 `;
 
-exports[`Test Summarize Node, aggregateAndSplitData should handle split field values containing spaces when convertKeysToString is not set: split-field-with-spaces-result 1`] = `
+exports[`Test Summarize Node, aggregateAndSplitData > should handle split field values containing spaces when convertKeysToString is not set > split-field-with-spaces-result 1`] = `
 {
   "fieldName": "Product",
   "splits": Map {
@@ -59,7 +237,7 @@ exports[`Test Summarize Node, aggregateAndSplitData should handle split field va
 }
 `;
 
-exports[`Test Summarize Node, aggregateAndSplitData should handle split field values containing spaces when convertKeysToString is true: split-field-with-spaces-array 1`] = `
+exports[`Test Summarize Node, aggregateAndSplitData > should handle split field values containing spaces when convertKeysToString is true > split-field-with-spaces-array 1`] = `
 [
   {
     "pairedItems": [
@@ -88,7 +266,7 @@ exports[`Test Summarize Node, aggregateAndSplitData should handle split field va
 ]
 `;
 
-exports[`Test Summarize Node, aggregateAndSplitData should handle split field values containing spaces when convertKeysToString is true: split-field-with-spaces-result 1`] = `
+exports[`Test Summarize Node, aggregateAndSplitData > should handle split field values containing spaces when convertKeysToString is true > split-field-with-spaces-result 1`] = `
 {
   "fieldName": "Product",
   "splits": Map {
@@ -118,7 +296,7 @@ exports[`Test Summarize Node, aggregateAndSplitData should handle split field va
 }
 `;
 
-exports[`Test Summarize Node, aggregateAndSplitData should not convert numbers to strings: array 1`] = `
+exports[`Test Summarize Node, aggregateAndSplitData > should not convert numbers to strings > array 1`] = `
 [
   {
     "pairedItems": [
@@ -159,7 +337,7 @@ exports[`Test Summarize Node, aggregateAndSplitData should not convert numbers t
 ]
 `;
 
-exports[`Test Summarize Node, aggregateAndSplitData should not convert numbers to strings: result 1`] = `
+exports[`Test Summarize Node, aggregateAndSplitData > should not convert numbers to strings > result 1`] = `
 {
   "fieldName": "Sku",
   "splits": Map {
@@ -207,7 +385,7 @@ exports[`Test Summarize Node, aggregateAndSplitData should not convert numbers t
 }
 `;
 
-exports[`Test Summarize Node, aggregateAndSplitData should not convert strings to numbers: array 1`] = `
+exports[`Test Summarize Node, aggregateAndSplitData > should not convert strings to numbers > array 1`] = `
 [
   {
     "pairedItems": [
@@ -248,7 +426,7 @@ exports[`Test Summarize Node, aggregateAndSplitData should not convert strings t
 ]
 `;
 
-exports[`Test Summarize Node, aggregateAndSplitData should not convert strings to numbers: result 1`] = `
+exports[`Test Summarize Node, aggregateAndSplitData > should not convert strings to numbers > result 1`] = `
 {
   "fieldName": "Sku",
   "splits": Map {
@@ -296,7 +474,7 @@ exports[`Test Summarize Node, aggregateAndSplitData should not convert strings t
 }
 `;
 
-exports[`Test Summarize Node, aggregateAndSplitData with skipEmptySplitFields=true should skip empty split fields: array 1`] = `
+exports[`Test Summarize Node, aggregateAndSplitData > with skipEmptySplitFields=true > should skip empty split fields > array 1`] = `
 [
   {
     "pairedItems": [
@@ -320,7 +498,7 @@ exports[`Test Summarize Node, aggregateAndSplitData with skipEmptySplitFields=tr
 ]
 `;
 
-exports[`Test Summarize Node, aggregateAndSplitData with skipEmptySplitFields=true should skip empty split fields: result 1`] = `
+exports[`Test Summarize Node, aggregateAndSplitData > with skipEmptySplitFields=true > should skip empty split fields > result 1`] = `
 {
   "fieldName": "Sku",
   "splits": Map {

@@ -1,15 +1,11 @@
-<script lang="ts" setup>
+<script lang="ts" setup generic="Key extends string, Item extends ItemWithKey<Key>">
 import type { ComponentPublicInstance } from 'vue';
 import { computed, onMounted, onBeforeMount, ref, nextTick, watch } from 'vue';
 
-interface RecycleScrollerProps {
-	itemSize: number;
-	items: Array<Record<string, string>>;
-	itemKey: string;
-	offset?: number;
-}
+import type { RecycleScrollerProps } from './RecycleScroller.types';
+import type { ItemWithKey } from '../../types';
 
-const props = withDefaults(defineProps<RecycleScrollerProps>(), {
+const props = withDefaults(defineProps<RecycleScrollerProps<Key, Item>>(), {
 	offset: 2,
 });
 
@@ -24,18 +20,23 @@ const windowHeight = ref(0);
 
 /** Cache */
 
-const itemSizeCache = ref<Record<string, number>>({});
+const itemSizeCache = ref<Record<Item[Key], number>>({} as Record<Item[Key], number>);
 const itemPositionCache = computed(() => {
-	return props.items.reduce<Record<string, number>>((acc, item, index) => {
-		const key = item[props.itemKey];
-		const prevItem = props.items[index - 1];
-		const prevItemPosition = prevItem ? acc[prevItem[props.itemKey]] : 0;
-		const prevItemSize = prevItem ? itemSizeCache.value[prevItem[props.itemKey]] : 0;
+	return props.items.reduce<Record<Item[Key], number>>(
+		(acc, item, index) => {
+			const key = item[props.itemKey];
+			const prevItem = props.items[index - 1];
+			const prevItemPosition = prevItem ? acc[prevItem[props.itemKey]] : 0;
+			const prevItemSize = prevItem
+				? (itemSizeCache.value[prevItem[props.itemKey]] ?? props.itemSize)
+				: 0;
 
-		acc[key] = prevItemPosition + prevItemSize;
+			acc[key] = prevItemPosition + prevItemSize;
 
-		return acc;
-	}, {});
+			return acc;
+		},
+		{} as Record<Item[Key], number>,
+	);
 });
 
 /** Indexes */
@@ -55,7 +56,7 @@ const startIndex = computed(() => {
 const endIndex = computed(() => {
 	const foundIndex = props.items.findIndex((item) => {
 		const itemPosition = itemPositionCache.value[item[props.itemKey]];
-		const itemSize = itemSizeCache.value[item[props.itemKey]];
+		const itemSize = itemSizeCache.value[item[props.itemKey]] ?? props.itemSize;
 
 		return itemPosition + itemSize >= scrollTop.value + wrapperHeight.value;
 	});
@@ -89,7 +90,9 @@ watch(
 const scrollerHeight = computed(() => {
 	const lastItem = props.items[props.items.length - 1];
 	const lastItemPosition = lastItem ? itemPositionCache.value[lastItem[props.itemKey]] : 0;
-	const lastItemSize = lastItem ? itemSizeCache.value[lastItem[props.itemKey]] : props.itemSize;
+	const lastItemSize = lastItem
+		? (itemSizeCache.value[lastItem[props.itemKey]] ?? props.itemSize)
+		: props.itemSize;
 
 	return lastItemPosition + lastItemSize;
 });
@@ -124,13 +127,15 @@ onMounted(() => {
 
 /** Event handlers */
 
+/** Build the cache once to avoid O(n²) work from copying it for each item. */
 function initializeItemSizeCache() {
-	props.items.forEach((item) => {
-		itemSizeCache.value = {
-			...itemSizeCache.value,
-			[item[props.itemKey]]: props.itemSize,
-		};
-	});
+	const cache = {} as Record<Item[Key], number>;
+
+	for (const item of props.items) {
+		cache[item[props.itemKey]] = props.itemSize;
+	}
+
+	itemSizeCache.value = cache;
 }
 
 function updateItemSizeCache(items: Array<Record<string, string>>) {
@@ -143,14 +148,14 @@ function onUpdateItemSize(item: { [key: string]: string }) {
 	void nextTick(() => {
 		const itemId = item[props.itemKey];
 		const itemRef = itemRefs.value[itemId] as HTMLElement;
-		const previousSize = itemSizeCache.value[itemId];
+		// The virtual layout positions an unmeasured row as if it were
+		// `itemSize` tall, so that is the height to compensate against — using
+		// the raw cache miss here would scroll by NaN and reset to the top.
+		const previousSize = itemSizeCache.value[itemId] ?? props.itemSize;
 		const size = itemRef ? itemRef.offsetHeight : props.itemSize;
 		const difference = size - previousSize;
 
-		itemSizeCache.value = {
-			...itemSizeCache.value,
-			[item[props.itemKey]]: size,
-		};
+		itemSizeCache.value[itemId] = size;
 
 		if (wrapperRef.value && scrollTop.value) {
 			wrapperRef.value.scrollTop = wrapperRef.value.scrollTop + difference;
@@ -177,6 +182,26 @@ function onScroll() {
 
 	scrollTop.value = wrapperRef.value.scrollTop;
 }
+
+function scrollTo(position: number) {
+	if (!wrapperRef.value) {
+		return;
+	}
+
+	wrapperRef.value.scrollTop = position;
+	scrollTop.value = wrapperRef.value.scrollTop;
+}
+
+function scrollToKey(key: Item[Key]) {
+	const position = itemPositionCache.value[key];
+	if (position === undefined) {
+		return;
+	}
+
+	scrollTo(position);
+}
+
+defineExpose({ scrollToKey, scrollTo, scrollTop });
 </script>
 
 <template>
@@ -186,7 +211,7 @@ function onScroll() {
 				<div
 					v-for="item in visibleItems"
 					:key="item[itemKey]"
-					:ref="(element) => (itemRefs[item[itemKey]] = element)"
+					:ref="(element) => (itemRefs[`${item[itemKey]}`] = element)"
 					class="recycle-scroller-item"
 				>
 					<slot :item="item" :update-item-size="onUpdateItemSize" />

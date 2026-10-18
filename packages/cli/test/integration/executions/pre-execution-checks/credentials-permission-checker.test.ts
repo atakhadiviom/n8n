@@ -1,9 +1,17 @@
-import type { Project } from '@n8n/db';
-import type { User } from '@n8n/db';
-import { ProjectRepository } from '@n8n/db';
-import { SharedCredentialsRepository } from '@n8n/db';
-import { SharedWorkflowRepository } from '@n8n/db';
-import { WorkflowRepository } from '@n8n/db';
+import {
+	createTeamProject,
+	getPersonalProject,
+	randomCredentialPayload as randomCred,
+	testDb,
+	mockInstance,
+} from '@n8n/backend-test-utils';
+import type { Project, User } from '@n8n/db';
+import {
+	ProjectRepository,
+	SharedCredentialsRepository,
+	SharedWorkflowRepository,
+	WorkflowRepository,
+} from '@n8n/db';
 import { Container } from '@n8n/di';
 import type { INode, IWorkflowBase } from 'n8n-workflow';
 import { randomInt } from 'n8n-workflow';
@@ -13,12 +21,9 @@ import { CredentialsPermissionChecker } from '@/executions/pre-execution-checks'
 import { LoadNodesAndCredentials } from '@/load-nodes-and-credentials';
 import { NodeTypes } from '@/node-types';
 import { OwnershipService } from '@/services/ownership.service';
-import { mockInstance } from '@test/mocking';
+import { WorkflowValidationService } from '@/workflows/workflow-validation.service';
 import { affixRoleToSaveCredential } from '@test-integration/db/credentials';
-import { getPersonalProject } from '@test-integration/db/projects';
 import { createOwner, createUser } from '@test-integration/db/users';
-import { randomCredentialPayload as randomCred } from '@test-integration/random';
-import * as testDb from '@test-integration/test-db';
 import type { SaveCredentialFunction } from '@test-integration/types';
 import { mockNodeTypesData } from '@test-integration/utils/node-types-data';
 
@@ -32,6 +37,7 @@ const createWorkflow = async (nodes: INode[], workflowOwner?: User): Promise<IWo
 		connections: {},
 		nodeTypes: mockNodeTypes,
 		nodes,
+		versionId: uuid(),
 	};
 
 	const workflowEntity = await Container.get(WorkflowRepository).save(workflowDetails);
@@ -79,6 +85,88 @@ beforeAll(async () => {
 	);
 });
 
+// The publish check a published workflow runs through: what the publisher may
+// use in this workflow, end to end against the database.
+describe('publish check for the Owner in a team project', () => {
+	const credentialNode = (credential: { id: string; name: string }): INode => ({
+		id: uuid(),
+		name: 'Action Network',
+		type: 'n8n-nodes-base.actionNetwork',
+		parameters: {},
+		typeVersion: 1,
+		position: [0, 0],
+		credentials: { actionNetworkApi: { id: credential.id, name: credential.name } },
+	});
+
+	/** A team-project workflow that uses a member's personal credential. */
+	const setUp = async () => {
+		const teamProject = await createTeamProject('Marketing', member);
+		const credential = await saveCredential(randomCred(), { user: member });
+		const nodes = [credentialNode(credential)];
+		const workflow = await Container.get(WorkflowRepository).save({
+			id: randomInt(100, 100_000).toString(),
+			name: 'test',
+			active: false,
+			connections: {},
+			nodes,
+			versionId: uuid(),
+		});
+		await Container.get(SharedWorkflowRepository).save({
+			workflow,
+			project: teamProject,
+			role: 'workflow:owner',
+		});
+		ownershipService.getWorkflowProjectCached.mockResolvedValue(teamProject);
+
+		const publish = async () =>
+			await Container.get(WorkflowValidationService).validatePublisherCredentialAccess(
+				owner,
+				nodes,
+				workflow.id,
+			);
+		return { teamProject, credential, publish };
+	};
+
+	beforeEach(async () => {
+		await testDb.truncate(['WorkflowEntity', 'CredentialsEntity']);
+		process.env.N8N_ENV_FEAT_CRED_SHARING = 'true';
+	});
+
+	afterEach(() => {
+		delete process.env.N8N_ENV_FEAT_CRED_SHARING;
+		ownershipService.getWorkflowProjectCached.mockReset();
+	});
+
+	test('refuses a personal credential that nobody shared with the project', async () => {
+		const { credential, publish } = await setUp();
+
+		await expect(publish()).resolves.toEqual({
+			isValid: false,
+			error: `Cannot publish workflow: You do not have access to credential "${credential.name}". Ask its owner to share it with you.`,
+		});
+	});
+
+	test('accepts the credential once it is shared with the project', async () => {
+		const { teamProject, credential, publish } = await setUp();
+		await Container.get(SharedCredentialsRepository).save(
+			Container.get(SharedCredentialsRepository).create({
+				projectId: teamProject.id,
+				credentialsId: credential.id,
+				role: 'credential:user',
+			}),
+		);
+
+		await expect(publish()).resolves.toEqual({ isValid: true });
+	});
+
+	test('does not check credentials with the flag off', async () => {
+		const { publish } = await setUp();
+		delete process.env.N8N_ENV_FEAT_CRED_SHARING;
+
+		await expect(publish()).resolves.toEqual({ isValid: true });
+	});
+});
+
 describe('check()', () => {
 	beforeEach(async () => {
 		await testDb.truncate(['WorkflowEntity', 'CredentialsEntity']);
@@ -93,7 +181,7 @@ describe('check()', () => {
 			{
 				id: uuid(),
 				name: 'Start',
-				type: 'n8n-nodes-base.start',
+				type: 'n8n-nodes-base.manualTrigger',
 				typeVersion: 1,
 				parameters: {},
 				position: [0, 0],

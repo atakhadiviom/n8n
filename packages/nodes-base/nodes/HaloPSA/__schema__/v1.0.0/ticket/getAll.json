@@ -1,6 +1,9 @@
 {
     "type": "object",
     "properties": {
+        "_open_search_score": {
+            "type": "integer"
+        },
         "agent_id": {
             "type": "integer"
         },
@@ -46,12 +49,6 @@
         "details": {
             "type": "string"
         },
-        "emailcclist": {
-            "type": "string"
-        },
-        "emailtolist": {
-            "type": "string"
-        },
         "enduserstatus": {
             "type": "integer"
         },
@@ -60,6 +57,9 @@
         },
         "excludefromsla": {
             "type": "boolean"
+        },
+        "first_respond_by_date": {
+            "type": "string"
         },
         "fixbydate": {
             "type": "string"
@@ -166,17 +166,14 @@
         "releasenotegroup_id": {
             "type": "integer"
         },
-        "reportedby": {
-            "type": "string"
-        },
         "respondbydate": {
-            "type": "string"
-        },
-        "responsedate": {
             "type": "string"
         },
         "reviewed": {
             "type": "boolean"
+        },
+        "risklevel": {
+            "type": "integer"
         },
         "section_timezone": {
             "type": "string"
@@ -195,9 +192,6 @@
         },
         "sla_id": {
             "type": "integer"
-        },
-        "slaresponsestate": {
-            "type": "string"
         },
         "source": {
             "type": "integer"
@@ -232,6 +226,9 @@
         "team": {
             "type": "string"
         },
+        "team_id": {
+            "type": "integer"
+        },
         "ticket_tags": {
             "type": "string"
         },
@@ -252,9 +249,6 @@
         },
         "useful_count": {
             "type": "integer"
-        },
-        "user_email": {
-            "type": "string"
         },
         "user_id": {
             "type": "integer"
@@ -280,9 +274,12 @@
         "workflow_id": {
             "type": "integer"
         },
+        "workflow_seq": {
+            "type": "integer"
+        },
         "workflow_step": {
             "type": "integer"
         }
     },
-    "version": 1
+    "version": 3
 }

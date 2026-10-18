@@ -1,3 +1,4 @@
+import { createDeferredPromise } from '@n8n/utils/promise/deferred-promise';
 import type {
 	AINodeConnectionType,
 	CallbackManager,
@@ -12,28 +13,24 @@ import type {
 	ITaskDataConnections,
 	IWorkflowExecuteAdditionalData,
 	NodeExecutionHint,
-	Result,
 	Workflow,
 	WorkflowExecuteMode,
+	EngineResponse,
 } from 'n8n-workflow';
-import {
-	ApplicationError,
-	createDeferredPromise,
-	createEnvProviderState,
-	jsonParse,
-	NodeConnectionTypes,
-} from 'n8n-workflow';
+import { UnexpectedError, jsonParse, NodeConnectionTypes } from 'n8n-workflow';
 
 import { BaseExecuteContext } from './base-execute-context';
 import {
 	assertBinaryData,
 	getBinaryDataBuffer,
-	copyBinaryFile,
+	getNodeBinaryHelperFunctions,
 	getBinaryHelperFunctions,
 	detectBinaryEncoding,
 } from './utils/binary-helper-functions';
 import { constructExecutionMetaData } from './utils/construct-execution-metadata';
 import { copyInputItems } from './utils/copy-input-items';
+import { getCredentialCheckHelperFunctions } from './utils/credential-check-helper-functions';
+import { getDataTableHelperFunctions } from './utils/data-table-helper-functions';
 import { getDeduplicationHelperFunctions } from './utils/deduplication-helper-functions';
 import { getFileSystemHelperFunctions } from './utils/file-system-helper-functions';
 import { getInputConnectionData } from './utils/get-input-connection-data';
@@ -61,8 +58,9 @@ export class ExecuteContext extends BaseExecuteContext implements IExecuteFuncti
 		connectionInputData: INodeExecutionData[],
 		inputData: ITaskDataConnections,
 		executeData: IExecuteData,
-		private readonly closeFunctions: CloseFunction[],
+		readonly closeFunctions: CloseFunction[],
 		abortSignal?: AbortSignal,
+		public subNodeExecutionResults?: EngineResponse,
 	) {
 		super(
 			workflow,
@@ -91,27 +89,26 @@ export class ExecuteContext extends BaseExecuteContext implements IExecuteFuncti
 				connectionInputData,
 			),
 			...getBinaryHelperFunctions(additionalData, workflow.id),
+			...getDataTableHelperFunctions(additionalData, workflow, node),
+			...getCredentialCheckHelperFunctions(additionalData),
 			...getSSHTunnelFunctions(),
 			...getFileSystemHelperFunctions(node),
 			...getDeduplicationHelperFunctions(workflow, node),
 
 			assertBinaryData: (itemIndex, propertyName) =>
-				assertBinaryData(inputData, node, itemIndex, propertyName, 0),
+				assertBinaryData(inputData, node, itemIndex, propertyName, 0, workflow.settings.binaryMode),
 			getBinaryDataBuffer: async (itemIndex, propertyName) =>
-				await getBinaryDataBuffer(inputData, itemIndex, propertyName, 0),
+				await getBinaryDataBuffer(
+					inputData,
+					itemIndex,
+					propertyName,
+					0,
+					workflow.settings.binaryMode,
+				),
 			detectBinaryEncoding: (buffer: Buffer) => detectBinaryEncoding(buffer),
 		};
 
-		this.nodeHelpers = {
-			copyBinaryFile: async (filePath, fileName, mimeType) =>
-				await copyBinaryFile(
-					this.workflow.id,
-					this.additionalData.executionId!,
-					filePath,
-					fileName,
-					mimeType,
-				),
-		};
+		this.nodeHelpers = getNodeBinaryHelperFunctions(this.workflow, this.additionalData);
 
 		this.getNodeParameter = ((
 			parameterName: string,
@@ -126,31 +123,6 @@ export class ExecuteContext extends BaseExecuteContext implements IExecuteFuncti
 				fallbackValue,
 				options,
 			)) as IExecuteFunctions['getNodeParameter'];
-	}
-
-	async startJob<T = unknown, E = unknown>(
-		jobType: string,
-		settings: unknown,
-		itemIndex: number,
-	): Promise<Result<T, E>> {
-		return await this.additionalData.startRunnerTask<T, E>(
-			this.additionalData,
-			jobType,
-			settings,
-			this,
-			this.inputData,
-			this.node,
-			this.workflow,
-			this.runExecutionData,
-			this.runIndex,
-			itemIndex,
-			this.node.name,
-			this.connectionInputData,
-			{},
-			this.mode,
-			createEnvProviderState(),
-			this.executeData,
-		);
 	}
 
 	async getInputConnectionData(
@@ -192,7 +164,10 @@ export class ExecuteContext extends BaseExecuteContext implements IExecuteFuncti
 		}
 
 		if (process.env.CODE_ENABLE_STDOUT === 'true') {
-			console.log(`[Workflow "${this.getWorkflow().id}"][Node "${this.node.name}"]`, ...args);
+			console.log(
+				`[Workflow "${this.getWorkflow().id}"][Node "${this.node.name}"]`,
+				...this.redactedConsoleArgs(args),
+			);
 		}
 	}
 
@@ -202,12 +177,12 @@ export class ExecuteContext extends BaseExecuteContext implements IExecuteFuncti
 
 	/** @deprecated use ISupplyDataFunctions.addInputData */
 	addInputData(): { index: number } {
-		throw new ApplicationError('addInputData should not be called on IExecuteFunctions');
+		throw new UnexpectedError('addInputData should not be called on IExecuteFunctions');
 	}
 
 	/** @deprecated use ISupplyDataFunctions.addOutputData */
 	addOutputData(): void {
-		throw new ApplicationError('addOutputData should not be called on IExecuteFunctions');
+		throw new UnexpectedError('addOutputData should not be called on IExecuteFunctions');
 	}
 
 	getParentCallbackManager(): CallbackManager | undefined {
@@ -216,5 +191,10 @@ export class ExecuteContext extends BaseExecuteContext implements IExecuteFuncti
 
 	addExecutionHints(...hints: NodeExecutionHint[]) {
 		this.hints.push(...hints);
+	}
+
+	/** Returns true if the node is being executed as an AI Agent tool */
+	isToolExecution(): boolean {
+		return false;
 	}
 }

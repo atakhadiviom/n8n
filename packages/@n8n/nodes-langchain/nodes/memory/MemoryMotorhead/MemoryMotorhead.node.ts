@@ -1,4 +1,3 @@
-/* eslint-disable n8n-nodes-base/node-dirname-against-convention */
 import { MotorheadMemory } from '@langchain/community/memory/motorhead_memory';
 import {
 	NodeConnectionTypes,
@@ -8,11 +7,15 @@ import {
 	type SupplyData,
 } from 'n8n-workflow';
 
-import { getSessionId } from '@utils/helpers';
-import { logWrapper } from '@utils/logWrapper';
-import { getConnectionHintNoticeField } from '@utils/sharedFields';
+import { coerceSessionIdToString, getSessionId } from '@utils/helpers';
+import { logWrapper, getConnectionHintNoticeField } from '@n8n/ai-utilities';
 
-import { expressionSessionKeyProperty, sessionIdOption, sessionKeyProperty } from '../descriptions';
+import {
+	expressionSessionKeyProperty,
+	sessionIdOption,
+	sessionKeyProperty,
+	scopedSessionHint,
+} from '../descriptions';
 
 export class MemoryMotorhead implements INodeType {
 	description: INodeTypeDescription = {
@@ -20,8 +23,9 @@ export class MemoryMotorhead implements INodeType {
 		name: 'memoryMotorhead',
 		icon: 'fa:file-export',
 		iconColor: 'black',
+		hidden: true,
 		group: ['transform'],
-		version: [1, 1.1, 1.2, 1.3],
+		version: [1, 1.1, 1.2, 1.3, 1.4],
 		description: 'Use Motorhead Memory',
 		defaults: {
 			name: 'Motorhead',
@@ -40,9 +44,9 @@ export class MemoryMotorhead implements INodeType {
 				],
 			},
 		},
-		// eslint-disable-next-line n8n-nodes-base/node-class-description-inputs-wrong-regular-node
+
 		inputs: [],
-		// eslint-disable-next-line n8n-nodes-base/node-class-description-outputs-wrong
+
 		outputs: [NodeConnectionTypes.AiMemory],
 		outputNames: ['Memory'],
 		credentials: [
@@ -53,6 +57,13 @@ export class MemoryMotorhead implements INodeType {
 		],
 		properties: [
 			getConnectionHintNoticeField([NodeConnectionTypes.AiAgent]),
+			{
+				displayName:
+					'The Motorhead project is no longer maintained. This node is deprecated and will be removed in a future version.',
+				name: 'deprecationNotice',
+				type: 'notice',
+				default: '',
+			},
 			{
 				displayName: 'Session ID',
 				name: 'sessionId',
@@ -86,6 +97,7 @@ export class MemoryMotorhead implements INodeType {
 				},
 			},
 			expressionSessionKeyProperty(1.3),
+			scopedSessionHint(1.4),
 			sessionKeyProperty,
 		],
 	};
@@ -99,7 +111,11 @@ export class MemoryMotorhead implements INodeType {
 		if (nodeVersion >= 1.2) {
 			sessionId = getSessionId(this, itemIndex);
 		} else {
-			sessionId = this.getNodeParameter('sessionId', itemIndex) as string;
+			sessionId = coerceSessionIdToString(
+				this,
+				this.getNodeParameter('sessionId', itemIndex),
+				itemIndex,
+			);
 		}
 
 		const memory = new MotorheadMemory({

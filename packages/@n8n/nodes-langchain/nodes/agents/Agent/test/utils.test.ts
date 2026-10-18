@@ -1,10 +1,13 @@
-import type { Tool } from 'langchain/tools';
-import { DynamicStructuredTool } from 'langchain/tools';
+import type { Tool } from '@langchain/classic/tools';
+import { DynamicStructuredTool } from '@langchain/classic/tools';
+import { ExecuteContext, SupplyDataContext } from 'n8n-core';
 import { NodeOperationError } from 'n8n-workflow';
-import type { INode } from 'n8n-workflow';
+import type { IExecuteFunctions, INode, ISupplyDataFunctions } from 'n8n-workflow';
 import { z } from 'zod';
 
-import { checkForStructuredTools } from '../agents/utils';
+import type { ZodObjectAny } from '../../../../types/types';
+import { checkForStructuredTools, isExecuteFunctions } from '../agents/utils';
+import { getInputs } from '../utils';
 
 describe('checkForStructuredTools', () => {
 	let mockNode: INode;
@@ -41,7 +44,7 @@ describe('checkForStructuredTools', () => {
 			func: async () => 'result',
 		});
 
-		const tools: Array<Tool | DynamicStructuredTool> = [dynamicTool];
+		const tools: Array<Tool | DynamicStructuredTool<ZodObjectAny>> = [dynamicTool];
 
 		await expect(checkForStructuredTools(tools, mockNode, 'Conversation Agent')).rejects.toThrow(
 			NodeOperationError,
@@ -102,5 +105,193 @@ describe('checkForStructuredTools', () => {
 				'The selected tools are not supported by "Conversation Agent", please use "Tools Agent" instead',
 			description: 'Incompatible connected tools: "dynamic-tool"',
 		});
+	});
+});
+
+describe('getInputs', () => {
+	it('should include all inputs when no flags are set to false', () => {
+		const inputs = getInputs(true, true, true);
+		expect(inputs).toEqual([
+			'main',
+			{
+				type: 'ai_languageModel',
+				displayName: 'Chat Model',
+				required: true,
+				maxConnections: 1,
+				filter: {
+					excludedNodes: [
+						'@n8n/n8n-nodes-langchain.lmCohere',
+						'@n8n/n8n-nodes-langchain.lmOllama',
+						'n8n/n8n-nodes-langchain.lmOpenAi',
+						'@n8n/n8n-nodes-langchain.lmOpenHuggingFaceInference',
+					],
+				},
+			},
+			{
+				type: 'ai_languageModel',
+				displayName: 'Fallback Model',
+				required: true,
+				maxConnections: 1,
+				filter: {
+					excludedNodes: [
+						'@n8n/n8n-nodes-langchain.lmCohere',
+						'@n8n/n8n-nodes-langchain.lmOllama',
+						'n8n/n8n-nodes-langchain.lmOpenAi',
+						'@n8n/n8n-nodes-langchain.lmOpenHuggingFaceInference',
+					],
+				},
+			},
+			{
+				type: 'ai_memory',
+				displayName: 'Memory',
+				maxConnections: 1,
+			},
+			{
+				type: 'ai_tool',
+				displayName: 'Tool',
+			},
+			{
+				type: 'ai_outputParser',
+				displayName: 'Output Parser',
+				maxConnections: 1,
+			},
+		]);
+	});
+
+	it('should exclude Output Parser when hasOutputParser is false', () => {
+		const inputs = getInputs(true, false, true);
+		expect(inputs).toEqual([
+			'main',
+			{
+				type: 'ai_languageModel',
+				displayName: 'Chat Model',
+				required: true,
+				maxConnections: 1,
+				filter: {
+					excludedNodes: [
+						'@n8n/n8n-nodes-langchain.lmCohere',
+						'@n8n/n8n-nodes-langchain.lmOllama',
+						'n8n/n8n-nodes-langchain.lmOpenAi',
+						'@n8n/n8n-nodes-langchain.lmOpenHuggingFaceInference',
+					],
+				},
+			},
+			{
+				type: 'ai_languageModel',
+				displayName: 'Fallback Model',
+				required: true,
+				maxConnections: 1,
+				filter: {
+					excludedNodes: [
+						'@n8n/n8n-nodes-langchain.lmCohere',
+						'@n8n/n8n-nodes-langchain.lmOllama',
+						'n8n/n8n-nodes-langchain.lmOpenAi',
+						'@n8n/n8n-nodes-langchain.lmOpenHuggingFaceInference',
+					],
+				},
+			},
+			{
+				type: 'ai_memory',
+				displayName: 'Memory',
+				maxConnections: 1,
+			},
+			{
+				type: 'ai_tool',
+				displayName: 'Tool',
+			},
+		]);
+	});
+
+	it('should exclude Fallback Model when needsFallback is false', () => {
+		const inputs = getInputs(true, true, false);
+		expect(inputs).toEqual([
+			'main',
+			{
+				type: 'ai_languageModel',
+				displayName: 'Chat Model',
+				required: true,
+				maxConnections: 1,
+				filter: {
+					excludedNodes: [
+						'@n8n/n8n-nodes-langchain.lmCohere',
+						'@n8n/n8n-nodes-langchain.lmOllama',
+						'n8n/n8n-nodes-langchain.lmOpenAi',
+						'@n8n/n8n-nodes-langchain.lmOpenHuggingFaceInference',
+					],
+				},
+			},
+			{
+				type: 'ai_memory',
+				displayName: 'Memory',
+				maxConnections: 1,
+			},
+			{
+				type: 'ai_tool',
+				displayName: 'Tool',
+			},
+			{
+				type: 'ai_outputParser',
+				displayName: 'Output Parser',
+				maxConnections: 1,
+			},
+		]);
+	});
+
+	it('should include main input when hasMainInput is true', () => {
+		const inputs = getInputs(true, true, true);
+		expect(inputs[0]).toBe('main');
+	});
+
+	it('should exclude main input when hasMainInput is false', () => {
+		const inputs = getInputs(false, true, true);
+		expect(inputs).not.toContain('main');
+	});
+
+	it('should handle all flags set to false', () => {
+		const inputs = getInputs(false, false, false);
+		expect(inputs).toEqual([
+			{
+				type: 'ai_languageModel',
+				displayName: 'Chat Model',
+				required: true,
+				maxConnections: 1,
+				filter: {
+					excludedNodes: [
+						'@n8n/n8n-nodes-langchain.lmCohere',
+						'@n8n/n8n-nodes-langchain.lmOllama',
+						'n8n/n8n-nodes-langchain.lmOpenAi',
+						'@n8n/n8n-nodes-langchain.lmOpenHuggingFaceInference',
+					],
+				},
+			},
+			{
+				type: 'ai_memory',
+				displayName: 'Memory',
+				maxConnections: 1,
+			},
+			{
+				type: 'ai_tool',
+				displayName: 'Tool',
+			},
+		]);
+	});
+});
+
+describe('isExecuteFunctions', () => {
+	// Asserted against the real context classes, not stand-ins: the predicate is duck-typed,
+	// so it silently inverts if `cloneWith` is ever hoisted onto a shared base class. These
+	// two cases fail if that happens. Constructing either class needs the whole execution
+	// engine, so only the prototype chain (all `in` looks at) is built.
+
+	it('should return false for a sub-node context', () => {
+		const context = Object.create(SupplyDataContext.prototype) as ISupplyDataFunctions;
+
+		expect(isExecuteFunctions(context)).toBe(false);
+	});
+
+	it('should return true for a top-level execute context', () => {
+		const context = Object.create(ExecuteContext.prototype) as IExecuteFunctions;
+
+		expect(isExecuteFunctions(context)).toBe(true);
 	});
 });

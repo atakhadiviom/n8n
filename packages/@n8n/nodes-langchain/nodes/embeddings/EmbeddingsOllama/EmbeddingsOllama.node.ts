@@ -1,6 +1,6 @@
-/* eslint-disable n8n-nodes-base/node-dirname-against-convention */
 import { OllamaEmbeddings } from '@langchain/ollama';
 import {
+	assertCredentialAllowsUrl,
 	NodeConnectionTypes,
 	type INodeType,
 	type INodeTypeDescription,
@@ -8,8 +8,7 @@ import {
 	type SupplyData,
 } from 'n8n-workflow';
 
-import { logWrapper } from '@utils/logWrapper';
-import { getConnectionHintNoticeField } from '@utils/sharedFields';
+import { logWrapper, getConnectionHintNoticeField, proxyFetch } from '@n8n/ai-utilities';
 
 import { ollamaDescription, ollamaModel } from '../../llms/LMOllama/description';
 
@@ -38,9 +37,9 @@ export class EmbeddingsOllama implements INodeType {
 				],
 			},
 		},
-		// eslint-disable-next-line n8n-nodes-base/node-class-description-inputs-wrong-regular-node
+
 		inputs: [],
-		// eslint-disable-next-line n8n-nodes-base/node-class-description-outputs-wrong
+
 		outputs: [NodeConnectionTypes.AiEmbedding],
 		outputNames: ['Embeddings'],
 		properties: [getConnectionHintNoticeField([NodeConnectionTypes.AiVectorStore]), ollamaModel],
@@ -50,10 +49,29 @@ export class EmbeddingsOllama implements INodeType {
 		this.logger.debug('Supply data for embeddings Ollama');
 		const modelName = this.getNodeParameter('model', itemIndex) as string;
 		const credentials = await this.getCredentials('ollamaApi');
+		const baseUrl = credentials.baseUrl as string;
+
+		assertCredentialAllowsUrl({
+			node: this.getNode(),
+			credentialData: credentials,
+			url: baseUrl,
+			surface: 'Ollama',
+		});
+
+		const headers = credentials.apiKey
+			? {
+					Authorization: `Bearer ${credentials.apiKey as string}`,
+				}
+			: undefined;
+
+		const egressFilter = this.helpers.getSecureEgressFilter();
 
 		const embeddings = new OllamaEmbeddings({
-			baseUrl: credentials.baseUrl as string,
+			baseUrl,
 			model: modelName,
+			headers,
+			fetch: async (input: RequestInfo | URL, init?: RequestInit) =>
+				await proxyFetch({ input, init, egressFilter }),
 		});
 
 		return {

@@ -1,21 +1,26 @@
 import type { ProjectIcon, ProjectType } from '@n8n/api-types';
-import type { Variables, Project, User, ListQueryDb, WorkflowHistory } from '@n8n/db';
-import type { AssignableGlobalRole, GlobalRole, ProjectRole, Scope } from '@n8n/permissions';
-import type express from 'express';
+import type {
+	APIRequest,
+	AuthenticatedRequest,
+	Variables,
+	Project,
+	User,
+	ListQueryDb,
+	WorkflowHistory,
+} from '@n8n/db';
+import type {
+	AssignableGlobalRole,
+	AssignableProjectRole,
+	GlobalRole,
+	ProjectRole,
+	Scope,
+} from '@n8n/permissions';
+import type { Request } from 'express';
 import type {
 	ICredentialDataDecryptedObject,
 	INodeCredentialTestRequest,
 	IPersonalizationSurveyAnswersV4,
 } from 'n8n-workflow';
-
-export type APIRequest<
-	RouteParams = {},
-	ResponseBody = {},
-	RequestBody = {},
-	RequestQuery = {},
-> = express.Request<RouteParams, ResponseBody, RequestBody, RequestQuery> & {
-	browserId?: string;
-};
 
 export type AuthlessRequest<
 	RouteParams = {},
@@ -23,19 +28,6 @@ export type AuthlessRequest<
 	RequestBody = {},
 	RequestQuery = {},
 > = APIRequest<RouteParams, ResponseBody, RequestBody, RequestQuery>;
-
-export type AuthenticatedRequest<
-	RouteParams = {},
-	ResponseBody = {},
-	RequestBody = {},
-	RequestQuery = {},
-> = Omit<APIRequest<RouteParams, ResponseBody, RequestBody, RequestQuery>, 'user' | 'cookies'> & {
-	user: User;
-	cookies: Record<string, string | undefined>;
-	headers: express.Request['headers'] & {
-		'push-ref': string;
-	};
-};
 
 export namespace ListQuery {
 	export type Request = AuthenticatedRequest<{}, {}, {}, Params> & {
@@ -59,6 +51,11 @@ export namespace ListQuery {
 	};
 }
 
+export function appendListQueryOptions(req: Request, options: ListQuery.Options) {
+	const listReq = req as ListQuery.Request;
+	listReq.listQueryOptions = { ...listReq.listQueryOptions, ...options };
+}
+
 // ----------------------------------
 //            list query
 // ----------------------------------
@@ -77,10 +74,13 @@ export declare namespace CredentialRequest {
 	type CredentialProperties = Partial<{
 		id: string; // deleted if sent
 		name: string;
+		description: string | null;
 		type: string;
 		data: ICredentialDataDecryptedObject;
 		projectId?: string;
 		isManaged?: boolean;
+		isGlobal?: boolean;
+		isResolvable?: boolean;
 	}>;
 
 	type Get = AuthenticatedRequest<{ credentialId: string }, {}, {}, Record<string, string>>;
@@ -114,7 +114,7 @@ export declare namespace CredentialRequest {
 		{},
 		{},
 		{},
-		{ workflowId: string } | { projectId: string }
+		({ workflowId: string } | { projectId: string }) & { forAgent?: 'true' | 'false' }
 	>;
 }
 
@@ -149,13 +149,6 @@ export declare namespace UserRequest {
 		{ transferId?: string; includeRole: boolean }
 	>;
 
-	export type Get = AuthenticatedRequest<
-		{ id: string; email: string; identifier: string },
-		{},
-		{},
-		{ limit?: number; offset?: number; cursor?: string; includeRole?: boolean; projectId?: string }
-	>;
-
 	export type PasswordResetLink = AuthenticatedRequest<{ id: string }, {}, {}, {}>;
 }
 
@@ -164,6 +157,7 @@ export declare namespace UserRequest {
 // ----------------------------------
 
 export declare namespace MFA {
+	type Enforce = AuthenticatedRequest<{}, {}, { enforce: boolean }, {}>;
 	type Verify = AuthenticatedRequest<{}, {}, { mfaCode: string }, {}>;
 	type Activate = AuthenticatedRequest<{}, {}, { mfaCode: string }, {}>;
 	type Disable = AuthenticatedRequest<{}, {}, { mfaCode?: string; mfaRecoveryCode?: string }, {}>;
@@ -195,7 +189,20 @@ export declare namespace OAuthRequest {
 
 	namespace OAuth2Credential {
 		type Auth = AuthenticatedRequest<{}, {}, {}, { id: string }>;
-		type Callback = AuthenticatedRequest<{}, {}, {}, { code: string; state: string }>;
+		type Callback = AuthenticatedRequest<
+			{},
+			{},
+			{},
+			// `admin_consent` and its error pair arrive when an administrator approves
+			// the app for an organisation, which reuses the same reply URL.
+			{
+				code: string;
+				state: string;
+				admin_consent?: string;
+				error?: string;
+				error_description?: string;
+			}
+		>;
 	}
 }
 
@@ -217,11 +224,7 @@ export declare namespace AnnotationTagsRequest {
 export declare namespace NodeRequest {
 	type GetAll = AuthenticatedRequest;
 
-	type Post = AuthenticatedRequest<{}, {}, { name?: string; verify?: boolean; version?: string }>;
-
 	type Delete = AuthenticatedRequest<{}, {}, {}, { name: string }>;
-
-	type Update = Post;
 }
 
 // ----------------------------------
@@ -229,7 +232,7 @@ export declare namespace NodeRequest {
 // ----------------------------------
 
 export declare namespace LicenseRequest {
-	type Activate = AuthenticatedRequest<{}, {}, { activationKey: string }, {}>;
+	type Activate = AuthenticatedRequest<{}, {}, { activationKey: string; eulaUri?: string }, {}>;
 }
 
 // ----------------------------------
@@ -239,7 +242,6 @@ export declare namespace LicenseRequest {
 export declare namespace VariablesRequest {
 	type CreateUpdatePayload = Omit<Variables, 'id'> & { id?: unknown };
 
-	type GetAll = AuthenticatedRequest;
 	type Get = AuthenticatedRequest<{ id: string }, {}, {}, {}>;
 	type Create = AuthenticatedRequest<{}, {}, CreateUpdatePayload, {}>;
 	type Update = AuthenticatedRequest<{ id: string }, {}, CreateUpdatePayload, {}>;
@@ -253,7 +255,7 @@ export declare namespace VariablesRequest {
 export declare namespace WorkflowHistoryRequest {
 	type GetList = AuthenticatedRequest<
 		{ workflowId: string },
-		Array<Omit<WorkflowHistory, 'nodes' | 'connections'>>,
+		Array<Omit<WorkflowHistory, 'nodes' | 'connections' | 'nodeGroups'>>,
 		{},
 		ListQuery.Options
 	>;
@@ -279,7 +281,7 @@ export declare namespace ActiveWorkflowRequest {
 
 export declare namespace ProjectRequest {
 	type GetMyProjectsResponse = Array<
-		Project & { role: ProjectRole | GlobalRole; scopes?: Scope[] }
+		Project & { role: ProjectRole | AssignableProjectRole | GlobalRole; scopes?: Scope[] }
 	>;
 
 	type ProjectRelationResponse = {
@@ -287,15 +289,32 @@ export declare namespace ProjectRequest {
 		email: string;
 		firstName: string;
 		lastName: string;
-		role: ProjectRole;
+		role: ProjectRole | AssignableProjectRole;
+	};
+	/**
+	 * A user who reaches a project through a global role instead of a project
+	 * relation. Instance owners and admins always have full project access, so
+	 * the member list shows them even when no relation row exists.
+	 */
+	type ProjectImplicitMemberResponse = {
+		id: string;
+		email: string;
+		firstName: string;
+		lastName: string;
+		globalRole: { slug: string; displayName: string };
 	};
 	type ProjectWithRelations = {
 		id: string;
 		name: string | undefined;
 		icon: ProjectIcon | null;
 		type: ProjectType;
+		description: string | null;
+		customTelemetryTags: Array<{ key: string; value: string }>;
+		creatorId: string | null;
 		relations: ProjectRelationResponse[];
+		implicitMembers: ProjectImplicitMemberResponse[];
 		scopes: Scope[];
+		rolesManaged: boolean;
 	};
 }
 

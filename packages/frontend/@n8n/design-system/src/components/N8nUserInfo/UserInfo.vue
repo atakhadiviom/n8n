@@ -6,16 +6,17 @@ import N8nAvatar from '../N8nAvatar';
 import N8nBadge from '../N8nBadge';
 import N8nText from '../N8nText';
 
-interface UsersInfoProps {
-	firstName?: string;
-	lastName?: string;
-	email?: string;
+export interface UsersInfoProps {
+	firstName?: string | null;
+	lastName?: string | null;
+	email?: string | null;
 	isOwner?: boolean;
 	isPendingUser?: boolean;
 	isCurrentUser?: boolean;
 	disabled?: boolean;
 	settings?: object;
 	isSamlLoginEnabled?: boolean;
+	mfaEnabled?: boolean;
 }
 
 const props = withDefaults(defineProps<UsersInfoProps>(), {
@@ -41,7 +42,7 @@ const classes = computed(
 
 		<div v-if="isPendingUser" :class="$style.pendingUser">
 			<N8nText :bold="true">{{ email }}</N8nText>
-			<span :class="$style.pendingBadge"><N8nBadge :bold="true">Pending</N8nBadge></span>
+			<span :class="$style.pendingBadge"><N8nBadge>Pending</N8nBadge></span>
 		</div>
 		<div v-else :class="$style.infoContainer">
 			<div>
@@ -50,7 +51,7 @@ const classes = computed(
 					{{ isCurrentUser ? t('nds.userInfo.you') : '' }}
 				</N8nText>
 				<span v-if="disabled" :class="$style.pendingBadge">
-					<N8nBadge :bold="true">Disabled</N8nBadge>
+					<N8nBadge>Disabled</N8nBadge>
 				</span>
 			</div>
 			<div>
@@ -70,7 +71,7 @@ const classes = computed(
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	color: var(--color-text-light);
+	color: var(--color--text--tint-1);
 }
 
 .infoContainer {
@@ -78,18 +79,18 @@ const classes = computed(
 	display: inline-flex;
 	flex-direction: column;
 	justify-content: center;
-	margin-left: var(--spacing-xs);
+	margin-left: var(--spacing--xs);
 }
 
 .pendingUser {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	margin-left: var(--spacing-xs);
+	margin-left: var(--spacing--xs);
 }
 
 .pendingBadge {
-	margin-left: var(--spacing-xs);
+	margin-left: var(--spacing--xs);
 }
 
 .disabled {

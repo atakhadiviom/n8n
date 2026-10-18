@@ -1,7 +1,6 @@
-/* eslint-disable n8n-nodes-base/node-dirname-against-convention */
-
-import { Ollama } from '@langchain/community/llms/ollama';
+import { Ollama, type OllamaInput } from '@langchain/ollama';
 import {
+	assertCredentialAllowsUrl,
 	NodeConnectionTypes,
 	type INodeType,
 	type INodeTypeDescription,
@@ -9,16 +8,18 @@ import {
 	type SupplyData,
 } from 'n8n-workflow';
 
-import { getConnectionHintNoticeField } from '@utils/sharedFields';
-
 import { ollamaDescription, ollamaModel, ollamaOptions } from './description';
-import { makeN8nLlmFailedAttemptHandler } from '../n8nLlmFailedAttemptHandler';
-import { N8nLlmTracing } from '../N8nLlmTracing';
+import {
+	makeN8nLlmFailedAttemptHandler,
+	N8nLlmTracing,
+	proxyFetch,
+	getConnectionHintNoticeField,
+} from '@n8n/ai-utilities';
 
 export class LmOllama implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Ollama Model',
-		// eslint-disable-next-line n8n-nodes-base/node-class-description-name-miscased
+
 		name: 'lmOllama',
 		icon: 'file:ollama.svg',
 		group: ['transform'],
@@ -41,9 +42,9 @@ export class LmOllama implements INodeType {
 				],
 			},
 		},
-		// eslint-disable-next-line n8n-nodes-base/node-class-description-inputs-wrong-regular-node
+
 		inputs: [],
-		// eslint-disable-next-line n8n-nodes-base/node-class-description-outputs-wrong
+
 		outputs: [NodeConnectionTypes.AiLanguageModel],
 		outputNames: ['Model'],
 		...ollamaDescription,
@@ -56,16 +57,34 @@ export class LmOllama implements INodeType {
 
 	async supplyData(this: ISupplyDataFunctions, itemIndex: number): Promise<SupplyData> {
 		const credentials = await this.getCredentials('ollamaApi');
+		const baseUrl = credentials.baseUrl as string;
+
+		assertCredentialAllowsUrl({
+			node: this.getNode(),
+			credentialData: credentials,
+			url: baseUrl,
+			surface: 'Ollama',
+		});
 
 		const modelName = this.getNodeParameter('model', itemIndex) as string;
-		const options = this.getNodeParameter('options', itemIndex, {}) as object;
+		const options = this.getNodeParameter('options', itemIndex, {}) as OllamaInput;
+		const headers = credentials.apiKey
+			? {
+					Authorization: `Bearer ${credentials.apiKey as string}`,
+				}
+			: undefined;
+
+		const egressFilter = this.helpers.getSecureEgressFilter();
 
 		const model = new Ollama({
-			baseUrl: credentials.baseUrl as string,
+			baseUrl,
 			model: modelName,
 			...options,
 			callbacks: [new N8nLlmTracing(this)],
 			onFailedAttempt: makeN8nLlmFailedAttemptHandler(this),
+			headers,
+			fetch: async (input: RequestInfo | URL, init?: RequestInit) =>
+				await proxyFetch({ input, init, egressFilter }),
 		});
 
 		return {

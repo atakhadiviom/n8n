@@ -1,23 +1,27 @@
-export interface IUser {
+export type IUser = {
 	id: string;
-	firstName?: string;
-	lastName?: string;
+	firstName?: string | null;
+	lastName?: string | null;
 	fullName?: string;
-	email?: string;
-	isOwner: boolean;
-	isPendingUser: boolean;
+	role?: string;
+	email?: string | null;
+	signInType?: string;
+	isOwner?: boolean;
+	isPendingUser?: boolean;
 	inviteAcceptUrl?: string;
-	disabled: boolean;
-	signInType: string;
-}
+	disabled?: boolean;
+	mfaEnabled?: boolean;
+};
 
-export interface UserAction {
+export interface UserAction<UserType extends IUser> {
 	label: string;
 	value: string;
-	disabled: boolean;
+	/** Whether to show a separator above the item in the dropdown menu. */
+	divided?: boolean;
+	disabled?: boolean;
 	type?: 'external-link';
 	tooltip?: string;
-	guard?: (user: IUser) => boolean;
+	guard?: (user: UserType) => boolean;
 }
 
 export type UserStackGroups = { [groupName: string]: IUser[] };
